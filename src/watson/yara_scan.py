@@ -3,6 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 
+class YaraScanError(Exception):
+    """Raised when a YARA rule file fails to compile or a scan fails."""
+
+
 def scan_file(file_path: Path, rules_dir: Path) -> list:
     import yara
 
@@ -11,8 +15,11 @@ def scan_file(file_path: Path, rules_dir: Path) -> list:
         return []
 
     filepaths = {f"rule_{i}": str(f) for i, f in enumerate(rule_files)}
-    compiled = yara.compile(filepaths=filepaths)
-    matches = compiled.match(str(file_path))
+    try:
+        compiled = yara.compile(filepaths=filepaths)
+        matches = compiled.match(str(file_path))
+    except yara.Error as exc:
+        raise YaraScanError(str(exc)) from exc
 
     return [
         {
