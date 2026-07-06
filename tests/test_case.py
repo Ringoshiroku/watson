@@ -175,3 +175,65 @@ def test_case_load_tolerates_json_missing_capabilities_field(tmp_path):
     loaded = Case.load(case_path)
 
     assert loaded.static.capabilities == []
+
+
+def test_static_section_defaults_interesting_strings_when_omitted():
+    pe_metadata = PEMetadata(
+        machine="0x8664",
+        compile_timestamp=None,
+        sections=[],
+        imports={},
+        has_digital_signature=False,
+    )
+
+    static = StaticSection(pe_metadata=pe_metadata)
+
+    assert static.interesting_strings == []
+
+
+def test_case_round_trips_interesting_strings():
+    identity = Identity(sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe")
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        interesting_strings=[{"string": "192.168.1.1", "source": "static_strings", "reason": "ip"}],
+    )
+    case = Case(identity=identity, static=static)
+
+    restored = Case.from_dict(case.to_dict())
+
+    assert restored.static.interesting_strings == [
+        {"string": "192.168.1.1", "source": "static_strings", "reason": "ip"}
+    ]
+
+
+def test_case_load_tolerates_json_missing_interesting_strings_field(tmp_path):
+    data_without_interesting_strings = {
+        "identity": {
+            "sha256": "a" * 64,
+            "sha1": "b" * 40,
+            "md5": "c" * 32,
+            "imphash": None,
+            "file_name": "sample.exe",
+        },
+        "static": {
+            "pe_metadata": {
+                "machine": "0x8664",
+                "compile_timestamp": None,
+                "sections": [],
+                "imports": {},
+                "has_digital_signature": False,
+            },
+            "yara_matches": [],
+            "tools": {},
+            "capabilities": [],
+        },
+    }
+    case_path = tmp_path / (("a" * 64) + ".json")
+    case_path.write_text(json.dumps(data_without_interesting_strings))
+
+    loaded = Case.load(case_path)
+
+    assert loaded.static.interesting_strings == []
