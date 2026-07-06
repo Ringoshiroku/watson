@@ -149,3 +149,50 @@ def test_analyze_without_capa_rules_dir_reports_capa_unavailable(compiled_pe, tm
     case_data = json.loads(case_files[0].read_text())
     assert case_data["static"]["tools"]["capa"]["available"] is False
     assert case_data["static"]["capabilities"] == []
+
+
+requires_floss = pytest.mark.skipif(shutil.which("floss") is None, reason="floss not installed")
+
+
+@requires_floss
+def test_analyze_with_floss_flag_writes_raw_sidecar_and_reports_available(
+    compiled_pe, tmp_path, capsys
+):
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir), "--floss"])
+
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "floss: available" in captured.out
+    assert "Interesting Strings" in captured.out
+
+    case_files = [p for p in out_dir.glob("*.json") if not p.name.endswith("_floss.json")]
+    case_data = json.loads(case_files[0].read_text())
+    assert case_data["static"]["tools"]["floss"]["available"] is True
+    assert "interesting_strings" in case_data["static"]
+
+    sha256 = case_data["identity"]["sha256"]
+    sidecar_path = out_dir / f"{sha256}_floss.json"
+    assert sidecar_path.exists()
+    sidecar_data = json.loads(sidecar_path.read_text())
+    static_strings = [entry["string"] for entry in sidecar_data["strings"]["static_strings"]]
+    assert "hello from watson test fixture" in static_strings
+
+
+def test_analyze_without_floss_flag_reports_floss_unavailable(compiled_pe, tmp_path, capsys):
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
+
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "floss: unavailable" in captured.out
+
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads(case_files[0].read_text())
+    assert case_data["static"]["tools"]["floss"]["available"] is False
+    assert case_data["static"]["interesting_strings"] == []
+    assert not list(out_dir.glob("*_floss.json"))
