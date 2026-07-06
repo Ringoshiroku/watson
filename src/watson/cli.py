@@ -9,7 +9,7 @@ from watson.hashing import compute_hashes
 from watson.pe_metadata import InvalidPEError, extract_pe_metadata
 from watson.report import build_text_report
 from watson.tool_discovery import find_module
-from watson.yara_scan import scan_file
+from watson.yara_scan import YaraScanError, scan_file
 
 
 def build_case(file_path: Path, rules_dir: Path | None = None) -> Case:
@@ -38,7 +38,10 @@ def build_case(file_path: Path, rules_dir: Path | None = None) -> Case:
         yara_status = find_module("yara", "yara", pip_package="yara-python")
         tools["yara"] = {"available": yara_status.available, "reason": yara_status.reason}
         if yara_status.available:
-            yara_matches = scan_file(file_path, rules_dir)
+            try:
+                yara_matches = scan_file(file_path, rules_dir)
+            except YaraScanError as exc:
+                tools["yara"] = {"available": False, "reason": f"yara scan failed: {exc}"}
     else:
         tools["yara"] = {
             "available": False,
