@@ -143,3 +143,54 @@ def test_build_text_report_shows_no_capabilities_when_empty():
 
     assert "Capabilities" in report
     assert "none" in report
+
+
+def _sample_case_with_interesting_strings() -> Case:
+    identity = Identity(
+        sha256="a" * 64,
+        sha1="b" * 40,
+        md5="c" * 32,
+        imphash="d" * 32,
+        file_name="sample.exe",
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664",
+        compile_timestamp="2026-01-01T00:00:00+00:00",
+        sections=[
+            {"name": ".text", "virtual_size": 4096, "raw_size": 4096, "entropy": 6.1234},
+        ],
+        imports={"msvcrt.dll": ["printf"]},
+        has_digital_signature=False,
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        interesting_strings=[
+            {"string": "http://evil.example.com/payload.bin", "source": "decoded_strings", "reason": "url"}
+        ],
+    )
+    return Case(identity=identity, static=static)
+
+
+def test_build_text_report_shows_interesting_strings():
+    case = _sample_case_with_interesting_strings()
+
+    report = build_text_report(case)
+
+    assert "http://evil.example.com/payload.bin" in report
+    assert "[url]" in report
+
+
+def test_build_text_report_shows_no_interesting_strings_when_empty():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(pe_metadata=pe_metadata)
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "Interesting Strings" in report
+    assert "none" in report
