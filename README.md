@@ -20,7 +20,7 @@ YARA matching rather than skipping it).
 ## Usage
 
 ```
-watson analyze <file> [--out DIR] [--rules-dir DIR] [--capa-rules-dir DIR]
+watson analyze <file> [--out DIR] [--rules-dir DIR] [--capa-rules-dir DIR] [--floss]
 ```
 
 - `<file>`, the PE file to analyze.
@@ -34,16 +34,26 @@ watson analyze <file> [--out DIR] [--rules-dir DIR] [--capa-rules-dir DIR]
   not ship a capa ruleset or the FLIRT signatures capa's default backend
   wants; without signatures, capa still runs, just without
   library-function identification. Omit this flag to skip capa entirely.
+- `--floss`, run FLOSS to extract all strings from the sample, including
+  deobfuscated stack/tight/decoded strings, and flag IOC-like matches (IP
+  addresses, URLs, Windows registry keys, Windows paths, email addresses)
+  in the report. Requires the `floss` CLI on `PATH` (`pip install
+  flare-floss`). FLOSS's complete, unfiltered output (every string it
+  finds, easily thousands per sample) is written to
+  `<out>/<sha256>_floss.json`; only the flagged subset appears in the
+  report and case JSON. Omit this flag to skip FLOSS entirely (reported
+  as unavailable, not an error).
 
 Each run prints a report to stdout and writes `<out>/<sha256>.json`.
 
 ## Current scope and limitations
 
 Built so far: hashing (md5/sha1/sha256/imphash), PE metadata (sections,
-imports, timestamp, digital signature presence), YARA scanning, and capa
-capability analysis, all wired through `watson analyze`.
+imports, timestamp, digital signature presence), YARA scanning, capa
+capability analysis, and FLOSS string extraction with IOC-pattern
+flagging, all wired through `watson analyze`.
 
-Not yet built: FLOSS and Detect It Easy orchestration, malware
-classification and risk scoring, batch/directory mode, dynamic analysis,
-and static/dynamic correlation. See `docs/superpowers/specs/` for the full
-phased plan (not checked into this repo; ask if you need a copy).
+Not yet built: Detect It Easy orchestration, malware classification and
+risk scoring, batch/directory mode, dynamic analysis, and static/dynamic
+correlation. See `docs/superpowers/specs/` for the full phased plan (not
+checked into this repo; ask if you need a copy).
