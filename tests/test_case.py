@@ -114,3 +114,64 @@ def test_case_load_tolerates_old_format_json_missing_new_fields(tmp_path):
 
     assert loaded.static.yara_matches == []
     assert loaded.static.tools == {}
+
+
+def test_static_section_defaults_capabilities_when_omitted():
+    pe_metadata = PEMetadata(
+        machine="0x8664",
+        compile_timestamp=None,
+        sections=[],
+        imports={},
+        has_digital_signature=False,
+    )
+
+    static = StaticSection(pe_metadata=pe_metadata)
+
+    assert static.capabilities == []
+
+
+def test_case_round_trips_capabilities():
+    identity = Identity(sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe")
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        capabilities=[{"rule": "watson test fixture string", "namespace": "watson/test", "attack": [], "mbc": []}],
+    )
+    case = Case(identity=identity, static=static)
+
+    restored = Case.from_dict(case.to_dict())
+
+    assert restored.static.capabilities == [
+        {"rule": "watson test fixture string", "namespace": "watson/test", "attack": [], "mbc": []}
+    ]
+
+
+def test_case_load_tolerates_json_missing_capabilities_field(tmp_path):
+    data_without_capabilities = {
+        "identity": {
+            "sha256": "a" * 64,
+            "sha1": "b" * 40,
+            "md5": "c" * 32,
+            "imphash": None,
+            "file_name": "sample.exe",
+        },
+        "static": {
+            "pe_metadata": {
+                "machine": "0x8664",
+                "compile_timestamp": None,
+                "sections": [],
+                "imports": {},
+                "has_digital_signature": False,
+            },
+            "yara_matches": [],
+            "tools": {},
+        },
+    }
+    case_path = tmp_path / (("a" * 64) + ".json")
+    case_path.write_text(json.dumps(data_without_capabilities))
+
+    loaded = Case.load(case_path)
+
+    assert loaded.static.capabilities == []
