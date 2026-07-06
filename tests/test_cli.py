@@ -1,5 +1,8 @@
 import json
+import shutil
 from pathlib import Path
+
+import pytest
 
 from watson.cli import main
 
@@ -99,3 +102,50 @@ def test_analyze_with_malformed_yara_rule_degrades_gracefully(compiled_pe, tmp_p
     case_data = json.loads(case_files[0].read_text())
     assert case_data["static"]["tools"]["yara"]["available"] is False
     assert "yara scan failed" in case_data["static"]["tools"]["yara"]["reason"]
+
+
+requires_capa = pytest.mark.skipif(shutil.which("capa") is None, reason="capa not installed")
+
+
+@requires_capa
+def test_analyze_with_capa_rules_dir_reports_capability(compiled_pe, tmp_path, capsys):
+    out_dir = tmp_path / "cases"
+    capa_rules_dir = Path(__file__).parent / "fixtures" / "capa_rules"
+
+    exit_code = main(
+        [
+            "analyze",
+            str(compiled_pe),
+            "--out",
+            str(out_dir),
+            "--capa-rules-dir",
+            str(capa_rules_dir),
+        ]
+    )
+
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "watson test fixture string" in captured.out
+    assert "capa: available" in captured.out
+
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads(case_files[0].read_text())
+    assert case_data["static"]["tools"]["capa"]["available"] is True
+    assert len(case_data["static"]["capabilities"]) == 1
+
+
+def test_analyze_without_capa_rules_dir_reports_capa_unavailable(compiled_pe, tmp_path, capsys):
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
+
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "capa: unavailable" in captured.out
+
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads(case_files[0].read_text())
+    assert case_data["static"]["tools"]["capa"]["available"] is False
+    assert case_data["static"]["capabilities"] == []
