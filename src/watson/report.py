@@ -64,4 +64,13 @@ def build_text_report(case: Case) -> str:
     else:
         lines.append("  none")
 
+    lines.append("")
+    lines.append("Capabilities")
+    lines.append("-" * 12)
+    if case.static.capabilities:
+        for capability in case.static.capabilities:
+            lines.append(f"  {capability['rule']}")
+    else:
+        lines.append("  none")
+
     return "\n".join(lines)
