@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -28,6 +28,8 @@ class PEMetadata:
 @dataclass
 class StaticSection:
     pe_metadata: PEMetadata
+    yara_matches: list = field(default_factory=list)
+    tools: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -41,8 +43,14 @@ class Case:
     @classmethod
     def from_dict(cls, data: dict) -> "Case":
         identity = Identity(**data["identity"])
-        pe_metadata = PEMetadata(**data["static"]["pe_metadata"])
-        return cls(identity=identity, static=StaticSection(pe_metadata=pe_metadata))
+        static_data = data["static"]
+        pe_metadata = PEMetadata(**static_data["pe_metadata"])
+        static = StaticSection(
+            pe_metadata=pe_metadata,
+            yara_matches=static_data.get("yara_matches", []),
+            tools=static_data.get("tools", {}),
+        )
+        return cls(identity=identity, static=static)
 
     def save(self, directory: Path) -> Path:
         directory = Path(directory)
