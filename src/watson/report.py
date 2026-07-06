@@ -75,7 +75,7 @@ def build_text_report(case: Case) -> str:
 
     lines.append("")
     lines.append("Interesting Strings")
-    lines.append("-" * 20)
+    lines.append("-" * 19)
     if case.static.interesting_strings:
         for finding in case.static.interesting_strings:
             lines.append(f"  [{finding['reason']}] {finding['string']} ({finding['source']})")
