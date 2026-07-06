@@ -1,0 +1,12 @@
+rule:
+  meta:
+    name: watson test fixture string
+    namespace: watson/test
+    authors:
+      - watson
+    scopes:
+      static: file
+      dynamic: unsupported
+    examples: []
+  features:
+    - string: "hello from watson test fixture"
