@@ -73,4 +73,13 @@ def build_text_report(case: Case) -> str:
     else:
         lines.append("  none")
 
+    lines.append("")
+    lines.append("Interesting Strings")
+    lines.append("-" * 20)
+    if case.static.interesting_strings:
+        for finding in case.static.interesting_strings:
+            lines.append(f"  [{finding['reason']}] {finding['string']} ({finding['source']})")
+    else:
+        lines.append("  none")
+
     return "\n".join(lines)
