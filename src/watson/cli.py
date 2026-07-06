@@ -8,9 +8,11 @@ from watson.case import Case, Identity, PEMetadata, StaticSection
 from watson.hashing import compute_hashes
 from watson.pe_metadata import InvalidPEError, extract_pe_metadata
 from watson.report import build_text_report
+from watson.tool_discovery import find_module
+from watson.yara_scan import scan_file
 
 
-def build_case(file_path: Path) -> Case:
+def build_case(file_path: Path, rules_dir: Path | None = None) -> Case:
     hashes = compute_hashes(file_path)
     metadata = extract_pe_metadata(file_path)
 
@@ -28,7 +30,23 @@ def build_case(file_path: Path) -> Case:
         imports=metadata["imports"],
         has_digital_signature=metadata["has_digital_signature"],
     )
-    return Case(identity=identity, static=StaticSection(pe_metadata=pe_metadata))
+
+    tools = {}
+    yara_matches = []
+
+    if rules_dir is not None:
+        yara_status = find_module("yara", "yara", pip_package="yara-python")
+        tools["yara"] = {"available": yara_status.available, "reason": yara_status.reason}
+        if yara_status.available:
+            yara_matches = scan_file(file_path, rules_dir)
+    else:
+        tools["yara"] = {
+            "available": False,
+            "reason": "no rules directory provided (use --rules-dir)",
+        }
+
+    static = StaticSection(pe_metadata=pe_metadata, yara_matches=yara_matches, tools=tools)
+    return Case(identity=identity, static=static)
 
 
 def main(argv: list | None = None) -> int:
@@ -40,22 +58,28 @@ def main(argv: list | None = None) -> int:
     analyze_parser.add_argument(
         "--out", type=Path, default=Path("cases"), help="Directory to write the case JSON to"
     )
+    analyze_parser.add_argument(
+        "--rules-dir",
+        type=Path,
+        default=None,
+        help="Directory of .yar YARA rule files to scan the sample with",
+    )
 
     args = parser.parse_args(argv)
 
     if args.command == "analyze":
-        return _run_analyze(args.file, args.out)
+        return _run_analyze(args.file, args.out, args.rules_dir)
 
     return 1
 
 
-def _run_analyze(file_path: Path, out_dir: Path) -> int:
+def _run_analyze(file_path: Path, out_dir: Path, rules_dir: Path | None) -> int:
     if not file_path.is_file():
         print(f"error: {file_path} is not a file", file=sys.stderr)
         return 1
 
     try:
-        case = build_case(file_path)
+        case = build_case(file_path, rules_dir)
     except InvalidPEError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from watson.cli import main
 
@@ -39,3 +40,39 @@ def test_analyze_rejects_missing_file(tmp_path, capsys):
     assert exit_code == 1
     captured = capsys.readouterr()
     assert "is not a file" in captured.err
+
+
+def test_analyze_with_rules_dir_reports_yara_match(compiled_pe, tmp_path, capsys):
+    out_dir = tmp_path / "cases"
+    rules_dir = Path(__file__).parent / "fixtures" / "rules"
+
+    exit_code = main(
+        ["analyze", str(compiled_pe), "--out", str(out_dir), "--rules-dir", str(rules_dir)]
+    )
+
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "watson_test_fixture_string" in captured.out
+    assert "yara: available" in captured.out
+
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads(case_files[0].read_text())
+    assert case_data["static"]["tools"]["yara"]["available"] is True
+    assert len(case_data["static"]["yara_matches"]) == 1
+
+
+def test_analyze_without_rules_dir_reports_yara_unavailable(compiled_pe, tmp_path, capsys):
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
+
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "yara: unavailable" in captured.out
+
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads(case_files[0].read_text())
+    assert case_data["static"]["tools"]["yara"]["available"] is False
+    assert case_data["static"]["yara_matches"] == []
