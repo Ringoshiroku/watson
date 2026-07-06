@@ -1,0 +1,47 @@
+from __future__ import annotations
+
+from watson.case import Case
+
+
+def build_json_report(case: Case) -> dict:
+    return case.to_dict()
+
+
+def build_text_report(case: Case) -> str:
+    lines = []
+    lines.append("=" * 30)
+    lines.append("Watson Static Analysis Report")
+    lines.append("=" * 30)
+    lines.append("")
+    lines.append("Sample")
+    lines.append("-" * 6)
+    lines.append(case.identity.file_name)
+    lines.append("")
+    lines.append("Hashes")
+    lines.append("-" * 6)
+    lines.append(f"MD5:     {case.identity.md5}")
+    lines.append(f"SHA1:    {case.identity.sha1}")
+    lines.append(f"SHA256:  {case.identity.sha256}")
+    lines.append(f"Imphash: {case.identity.imphash or 'N/A'}")
+    lines.append("")
+    lines.append("PE Metadata")
+    lines.append("-" * 11)
+    pe = case.static.pe_metadata
+    lines.append(f"Machine: {pe.machine}")
+    lines.append(f"Compile Timestamp: {pe.compile_timestamp or 'N/A'}")
+    lines.append(f"Digital Signature Present: {pe.has_digital_signature}")
+    lines.append("")
+    lines.append("Sections")
+    lines.append("-" * 8)
+    for section in pe.sections:
+        lines.append(
+            f"  {section['name']:<10} virtual_size={section['virtual_size']:<8} "
+            f"raw_size={section['raw_size']:<8} entropy={section['entropy']}"
+        )
+    lines.append("")
+    lines.append("Imports")
+    lines.append("-" * 7)
+    for dll, functions in pe.imports.items():
+        lines.append(f"  {dll} ({len(functions)} functions)")
+
+    return "\n".join(lines)
