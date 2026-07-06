@@ -44,4 +44,24 @@ def build_text_report(case: Case) -> str:
     for dll, functions in pe.imports.items():
         lines.append(f"  {dll} ({len(functions)} functions)")
 
+    lines.append("")
+    lines.append("Tools")
+    lines.append("-" * 5)
+    for tool_name, status in case.static.tools.items():
+        state = "available" if status.get("available") else "unavailable"
+        line = f"  {tool_name}: {state}"
+        reason = status.get("reason")
+        if reason:
+            line += f" ({reason})"
+        lines.append(line)
+
+    lines.append("")
+    lines.append("YARA Matches")
+    lines.append("-" * 12)
+    if case.static.yara_matches:
+        for match in case.static.yara_matches:
+            lines.append(f"  {match['rule']}")
+    else:
+        lines.append("  none")
+
     return "\n".join(lines)
