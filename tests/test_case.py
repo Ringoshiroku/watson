@@ -53,3 +53,64 @@ def test_case_load_reads_back_a_saved_case(tmp_path):
 
     assert loaded.identity.sha256 == case.identity.sha256
     assert loaded.static.pe_metadata.machine == "0x8664"
+
+
+def test_static_section_defaults_yara_matches_and_tools_when_omitted():
+    pe_metadata = PEMetadata(
+        machine="0x8664",
+        compile_timestamp=None,
+        sections=[],
+        imports={},
+        has_digital_signature=False,
+    )
+
+    static = StaticSection(pe_metadata=pe_metadata)
+
+    assert static.yara_matches == []
+    assert static.tools == {}
+
+
+def test_case_round_trips_yara_matches_and_tools():
+    identity = Identity(sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe")
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        yara_matches=[{"rule": "test_rule", "tags": [], "matches": []}],
+        tools={"yara": {"available": True, "reason": None}},
+    )
+    case = Case(identity=identity, static=static)
+
+    restored = Case.from_dict(case.to_dict())
+
+    assert restored.static.yara_matches == [{"rule": "test_rule", "tags": [], "matches": []}]
+    assert restored.static.tools == {"yara": {"available": True, "reason": None}}
+
+
+def test_case_load_tolerates_old_format_json_missing_new_fields(tmp_path):
+    old_format_data = {
+        "identity": {
+            "sha256": "a" * 64,
+            "sha1": "b" * 40,
+            "md5": "c" * 32,
+            "imphash": None,
+            "file_name": "sample.exe",
+        },
+        "static": {
+            "pe_metadata": {
+                "machine": "0x8664",
+                "compile_timestamp": None,
+                "sections": [],
+                "imports": {},
+                "has_digital_signature": False,
+            }
+        },
+    }
+    case_path = tmp_path / (("a" * 64) + ".json")
+    case_path.write_text(json.dumps(old_format_data))
+
+    loaded = Case.load(case_path)
+
+    assert loaded.static.yara_matches == []
+    assert loaded.static.tools == {}
