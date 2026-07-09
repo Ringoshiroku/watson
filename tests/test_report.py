@@ -42,6 +42,27 @@ def test_build_text_report_contains_key_sections():
     assert "msvcrt.dll" in report
 
 
+def test_build_text_report_shows_machine_name_and_packed_flag():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664",
+        compile_timestamp=None,
+        sections=[],
+        imports={},
+        has_digital_signature=False,
+        machine_name="x64 (AMD64)",
+        likely_packed=True,
+    )
+    case = Case(identity=identity, static=StaticSection(pe_metadata=pe_metadata))
+
+    report = build_text_report(case)
+
+    assert "x64 (AMD64)" in report
+    assert "Likely Packed: True" in report
+
+
 def _sample_case_with_yara_and_tools() -> Case:
     identity = Identity(
         sha256="a" * 64,
@@ -74,6 +95,35 @@ def test_build_text_report_shows_tools_and_yara_matches():
 
     assert "yara: available" in report
     assert "watson_test_fixture_string" in report
+
+
+def test_build_text_report_shows_yara_match_detail():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        yara_matches=[
+            {
+                "rule": "suspicious_string",
+                "tags": ["malware"],
+                "matches": [
+                    {"identifier": "$a", "offset": 4096, "matched_data": "evil.example.com"},
+                ],
+            }
+        ],
+        tools={"yara": {"available": True, "reason": None}},
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "malware" in report
+    assert "0x1000" in report or "4096" in report
+    assert "evil.example.com" in report
 
 
 def test_build_text_report_shows_no_yara_matches_when_empty():
@@ -127,6 +177,75 @@ def test_build_text_report_shows_capabilities():
     report = build_text_report(case)
 
     assert "watson test fixture string" in report
+
+
+def test_build_text_report_shows_capability_attack_and_mbc_mapping():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        capabilities=[
+            {
+                "rule": "query registry",
+                "namespace": "host-interaction/registry",
+                "attack": ["Discovery::Query Registry [T1012]"],
+                "mbc": ["Collection::Data from Local System [C0004]"],
+            }
+        ],
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "Discovery::Query Registry [T1012]" in report
+    assert "Collection::Data from Local System [C0004]" in report
+
+
+def test_build_text_report_shows_capability_attack_and_mbc_as_structured_dicts():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        capabilities=[
+            {
+                "rule": "parse PE header",
+                "namespace": "load-code/pe",
+                "attack": [
+                    {
+                        "parts": ["Execution", "Shared Modules"],
+                        "tactic": "Execution",
+                        "technique": "Shared Modules",
+                        "subtechnique": "",
+                        "id": "T1129",
+                    }
+                ],
+                "mbc": [
+                    {
+                        "parts": ["Memory", "Allocate Memory"],
+                        "objective": "Memory",
+                        "behavior": "Allocate Memory",
+                        "method": "",
+                        "id": "C0007",
+                    }
+                ],
+            }
+        ],
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "Execution::Shared Modules [T1129]" in report
+    assert "Memory::Allocate Memory [C0007]" in report
+    assert "{'parts'" not in report
 
 
 def test_build_text_report_shows_no_capabilities_when_empty():
