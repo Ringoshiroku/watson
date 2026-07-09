@@ -76,11 +76,12 @@ class Case:
         safe_name = _sanitize_filename_component(self.identity.file_name)
         return f"{timestamp}-{safe_name}-{self.identity.md5}"
 
-    def save(self, directory: Path, now: Optional[datetime] = None) -> Path:
+    def save(self, directory: Path, now: Optional[datetime] = None, data: Optional[dict] = None) -> Path:
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
         out_path = directory / f"{self.output_basename(now)}.json"
-        out_path.write_text(json.dumps(self.to_dict(), indent=2))
+        payload = data if data is not None else self.to_dict()
+        out_path.write_text(json.dumps(payload, indent=2))
         return out_path
 
     @classmethod

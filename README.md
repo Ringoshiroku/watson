@@ -122,7 +122,9 @@ certificates or crypto.
 
 Each run prints scan progress as it happens (`running YARA scan... 3s`,
 then `done: YARA scan (3.2s)`), so a long-running capa or FLOSS pass on a
-real sample doesn't look hung.
+real sample doesn't look hung. Progress goes to stderr, not stdout, so
+redirecting output (`watson analyze sample.exe > report.txt`) captures
+only the report.
 
 The text report and case JSON both lead with a Summary section (counts
 and highlights: matched YARA rule names, ATT&CK tactics touched, flagged

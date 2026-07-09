@@ -8,9 +8,9 @@ from contextlib import contextmanager
 
 @contextmanager
 def stage(label: str, poll_interval: float = 0.2):
-    live = sys.stdout.isatty()
+    live = sys.stderr.isatty()
     start = time.monotonic()
-    print(f"running {label}...", end="\n" if not live else "", flush=True)
+    print(f"running {label}...", end="\n" if not live else "", flush=True, file=sys.stderr)
 
     stop_event = threading.Event()
     thread = None
@@ -18,7 +18,7 @@ def stage(label: str, poll_interval: float = 0.2):
     def _redraw() -> None:
         while not stop_event.wait(poll_interval):
             elapsed = time.monotonic() - start
-            print(f"\rrunning {label}... {elapsed:.0f}s", end="", flush=True)
+            print(f"\rrunning {label}... {elapsed:.0f}s", end="", flush=True, file=sys.stderr)
 
     if live:
         thread = threading.Thread(target=_redraw, daemon=True)
@@ -30,7 +30,7 @@ def stage(label: str, poll_interval: float = 0.2):
         stop_event.set()
         if thread is not None:
             thread.join()
-            print("\r" + " " * (len(label) + 24) + "\r", end="", flush=True)
+            print("\r" + " " * (len(label) + 24) + "\r", end="", flush=True, file=sys.stderr)
         raise
 
     stop_event.set()
@@ -39,4 +39,4 @@ def stage(label: str, poll_interval: float = 0.2):
 
     elapsed = time.monotonic() - start
     prefix = "\r" if live else ""
-    print(f"{prefix}done: {label} ({elapsed:.1f}s)" + " " * 10)
+    print(f"{prefix}done: {label} ({elapsed:.1f}s)" + " " * 10, file=sys.stderr)

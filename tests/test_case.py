@@ -72,6 +72,17 @@ def test_case_save_defaults_to_current_time_when_not_given(tmp_path):
     assert out_path.name.endswith(f"-sample-exe-{'c' * 32}.json")
 
 
+def test_case_save_writes_explicit_data_when_given(tmp_path):
+    from datetime import datetime
+
+    case = _sample_case()
+
+    out_path = case.save(tmp_path, now=datetime(2026, 7, 9, 14, 23, 5), data={"custom": "payload"})
+
+    on_disk = json.loads(out_path.read_text())
+    assert on_disk == {"custom": "payload"}
+
+
 def test_case_load_reads_back_a_saved_case(tmp_path):
     case = _sample_case()
     out_path = case.save(tmp_path)

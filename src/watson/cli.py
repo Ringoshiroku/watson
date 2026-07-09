@@ -11,7 +11,7 @@ from watson.floss_scan import FlossScanError, flatten_strings, save_raw_output, 
 from watson.hashing import compute_hashes
 from watson.ioc_strings import find_interesting_strings
 from watson.pe_metadata import InvalidPEError, extract_pe_metadata
-from watson.report import build_text_report
+from watson.report import build_json_report, build_text_report
 from watson import progress, tool_discovery
 from watson.tool_discovery import confirm, find_binary, find_module, find_or_fetch_dir, select_options
 from watson.yara_scan import YaraScanError, scan_file
@@ -272,7 +272,7 @@ def _run_analyze(
     if floss_raw is not None:
         save_raw_output(floss_raw, out_dir, case.output_basename(now))
 
-    case.save(out_dir, now)
+    case.save(out_dir, now, data=build_json_report(case))
     print(build_text_report(case, verbose=verbose))
     return 0
 

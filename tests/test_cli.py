@@ -77,6 +77,20 @@ def test_analyze_with_rules_dir_reports_yara_match(compiled_pe, tmp_path, capsys
     assert len(case_data["static"]["yara_matches"]) == 1
 
 
+def test_analyze_saved_case_json_includes_summary(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    rules_dir = Path(__file__).parent / "fixtures" / "rules"
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir), "-y", str(rules_dir)])
+
+    assert exit_code == 0
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads(case_files[0].read_text())
+    assert "summary" in case_data
+    assert case_data["summary"]["yara_matches"]["count"] == 1
+
+
 def test_analyze_with_short_flags_reports_yara_match(compiled_pe, tmp_path, capsys, monkeypatch):
     _isolate_rule_caches(monkeypatch, tmp_path)
     out_dir = tmp_path / "cases"
@@ -478,8 +492,8 @@ def test_analyze_shows_scan_progress_lines(compiled_pe, tmp_path, capsys, monkey
 
     assert exit_code == 0
     captured = capsys.readouterr()
-    assert "running YARA scan..." in captured.out
-    assert "done: YARA scan" in captured.out
+    assert "running YARA scan..." in captured.err
+    assert "done: YARA scan" in captured.err
 
 
 def test_analyze_verbose_flag_shows_yara_match_detail(compiled_pe, tmp_path, capsys, monkeypatch):
