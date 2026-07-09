@@ -2,9 +2,10 @@
 
 Offline-first static (and, later, dynamic) malware triage tool for a PE
 file. Produces hashes, PE metadata (with a packed-likely flag), YARA
-matches, capa capability/ATT&CK/MBC findings, and FLOSS string/IOC
-extraction, as a plain text report and a JSON case file, without reverse
-engineering or detonating the sample.
+matches, capa capability/ATT&CK/MBC findings, FLOSS string/IOC
+extraction, and a heuristic type/risk classification, as a plain text
+report and a JSON case file, without reverse engineering or detonating
+the sample.
 
 ## Install
 
@@ -142,13 +143,30 @@ CAPE/Cuckoo's summary-before-detail sandbox reports
 (https://capev2.readthedocs.io/en/latest/usage/results.html). No text or
 code from any of them is copied, only the general shape.
 
+### Classification
+
+Every run produces a coarse classification: a type label (`ransomware`,
+`worm`, `infostealer`, `backdoor`, `downloader`, `adware`, `trojan`, or
+`unclassified`), a risk tier (`low`/`medium`/`high`), and a plain-language
+list of exactly which evidence drove the call. It's computed entirely
+from the YARA/capa signals already collected, no extra tool, setup, or
+flag needed, and it's the first thing both the text report and the case
+JSON lead with.
+
+This is a heuristic type category, not malware family attribution (it
+won't tell you "Emotet", only "downloader") and not a numeric risk score.
+`unclassified` means no capability evidence was collected (YARA and/or
+capa weren't run, or ran and found nothing), it's a statement about
+missing evidence, not a claim that the sample is safe.
+
 ## Current scope and limitations
 
 Built so far: hashing (md5/sha1/sha256/imphash), PE metadata (sections,
 imports, timestamp, digital signature presence, packed-likely heuristic),
-YARA scanning, capa capability/ATT&CK/MBC analysis, and FLOSS string
-extraction with IOC-pattern flagging, all wired through `watson analyze`,
-with interactive setup for every optional rule set or tool.
+YARA scanning, capa capability/ATT&CK/MBC analysis, FLOSS string
+extraction with IOC-pattern flagging, and a heuristic type/risk
+classification, all wired through `watson analyze`, with interactive
+setup for every optional rule set or tool.
 
 Known limitations in what's built so far:
 - Digital signature check is presence-only, not validity, signer, or
@@ -156,7 +174,7 @@ Known limitations in what's built so far:
 - IOC flagging is regex-based; see "IOC flagging" above for its known
   false-positive shape.
 
-Not yet built: Detect It Easy orchestration, malware classification and
-risk scoring, batch/directory mode, dynamic analysis, and static/dynamic
-correlation. See the project's internal design docs for the full phased
-plan (not checked into this repo; ask if you need a copy).
+Not yet built: Detect It Easy orchestration, batch/directory mode,
+dynamic analysis, and static/dynamic correlation. See the project's
+internal design docs for the full phased plan (not checked into this
+repo; ask if you need a copy).
