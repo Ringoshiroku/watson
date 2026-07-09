@@ -2,9 +2,21 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+# Dots are replaced so a filename like "rb.exe" can't turn into
+# "rb.exe.json" (reads like a double extension); the rest of the set is
+# the standard Windows-reserved filename characters, replaced defensively
+# since the name ultimately comes from a scanned sample's own filename.
+_UNSAFE_FILENAME_CHARS = re.compile(r'[.\\/:*?"<>|]')
+
+
+def _sanitize_filename_component(name: str) -> str:
+    return _UNSAFE_FILENAME_CHARS.sub("-", name)
 
 
 @dataclass
@@ -58,10 +70,16 @@ class Case:
         )
         return cls(identity=identity, static=static)
 
-    def save(self, directory: Path) -> Path:
+    def output_basename(self, now: Optional[datetime] = None) -> str:
+        now = now or datetime.now()
+        timestamp = now.strftime("%H-%M-%S-%d-%m-%Y")
+        safe_name = _sanitize_filename_component(self.identity.file_name)
+        return f"{timestamp}-{safe_name}-{self.identity.md5}"
+
+    def save(self, directory: Path, now: Optional[datetime] = None) -> Path:
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
-        out_path = directory / f"{self.identity.sha256}.json"
+        out_path = directory / f"{self.output_basename(now)}.json"
         out_path.write_text(json.dumps(self.to_dict(), indent=2))
         return out_path
 

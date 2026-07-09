@@ -40,9 +40,9 @@ def flatten_strings(raw: dict) -> list:
     return flattened
 
 
-def save_raw_output(raw: dict, out_dir: Path, sha256: str) -> Path:
+def save_raw_output(raw: dict, out_dir: Path, base_name: str) -> Path:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{sha256}_floss.json"
+    out_path = out_dir / f"{base_name}_floss.json"
     out_path.write_text(json.dumps(raw, indent=2))
     return out_path

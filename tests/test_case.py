@@ -34,15 +34,42 @@ def test_case_round_trips_through_dict():
     assert restored.static.pe_metadata.imports == {"msvcrt.dll": ["printf"]}
 
 
-def test_case_save_writes_json_named_by_sha256(tmp_path):
+def test_case_save_writes_json_named_by_timestamp_and_filename(tmp_path):
+    from datetime import datetime
+
+    case = _sample_case()
+
+    out_path = case.save(tmp_path, now=datetime(2026, 7, 9, 14, 23, 5))
+
+    assert out_path == tmp_path / f"14-23-05-09-07-2026-sample-exe-{'c' * 32}.json"
+    assert out_path.exists()
+    on_disk = json.loads(out_path.read_text())
+    assert on_disk["identity"]["sha256"] == "a" * 64
+
+
+def test_case_save_sanitizes_dots_so_it_never_looks_like_a_double_extension(tmp_path):
+    from datetime import datetime
+
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="rb.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    case = Case(identity=identity, static=StaticSection(pe_metadata=pe_metadata))
+
+    out_path = case.save(tmp_path, now=datetime(2026, 7, 9, 14, 23, 5))
+
+    assert out_path == tmp_path / f"14-23-05-09-07-2026-rb-exe-{'c' * 32}.json"
+    assert out_path.name.count(".") == 1
+
+
+def test_case_save_defaults_to_current_time_when_not_given(tmp_path):
     case = _sample_case()
 
     out_path = case.save(tmp_path)
 
-    assert out_path == tmp_path / f"{'a' * 64}.json"
-    assert out_path.exists()
-    on_disk = json.loads(out_path.read_text())
-    assert on_disk["identity"]["sha256"] == "a" * 64
+    assert out_path.name.endswith(f"-sample-exe-{'c' * 32}.json")
 
 
 def test_case_load_reads_back_a_saved_case(tmp_path):
