@@ -1,6 +1,6 @@
 import subprocess
 
-from watson.tool_discovery import confirm, find_binary, find_module, find_or_fetch_dir
+from watson.tool_discovery import confirm, find_binary, find_module, find_or_fetch_dir, select_options
 
 
 def test_find_binary_reports_available_when_on_path():
@@ -139,7 +139,7 @@ def test_find_or_fetch_dir_clones_when_confirmed_interactively(tmp_path, monkeyp
     )
 
     cache_dir = tmp_path / "cache"
-    monkeypatch.setattr("watson.tool_discovery._is_interactive", lambda: True)
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt="": "y")
 
     status = find_or_fetch_dir("yara rules", None, cache_dir=cache_dir, fetch_url=str(origin))
@@ -150,7 +150,7 @@ def test_find_or_fetch_dir_clones_when_confirmed_interactively(tmp_path, monkeyp
 
 def test_find_or_fetch_dir_declines_when_user_says_no(tmp_path, monkeypatch):
     cache_dir = tmp_path / "cache"
-    monkeypatch.setattr("watson.tool_discovery._is_interactive", lambda: True)
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt="": "n")
 
     status = find_or_fetch_dir(
@@ -163,7 +163,7 @@ def test_find_or_fetch_dir_declines_when_user_says_no(tmp_path, monkeypatch):
 
 def test_find_or_fetch_dir_reports_unavailable_when_git_missing(tmp_path, monkeypatch):
     cache_dir = tmp_path / "cache"
-    monkeypatch.setattr("watson.tool_discovery._is_interactive", lambda: True)
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
     monkeypatch.setattr("shutil.which", lambda name: None)
 
     status = find_or_fetch_dir(
@@ -175,7 +175,7 @@ def test_find_or_fetch_dir_reports_unavailable_when_git_missing(tmp_path, monkey
 
 
 def test_confirm_returns_false_when_not_interactive(monkeypatch):
-    monkeypatch.setattr("watson.tool_discovery._is_interactive", lambda: False)
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: False)
 
     def fail_if_called(*args, **kwargs):
         raise AssertionError("should not prompt when not interactive")
@@ -186,14 +186,63 @@ def test_confirm_returns_false_when_not_interactive(monkeypatch):
 
 
 def test_confirm_returns_true_when_interactive_and_confirmed(monkeypatch):
-    monkeypatch.setattr("watson.tool_discovery._is_interactive", lambda: True)
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt="": "y")
 
     assert confirm("run floss?") is True
 
 
 def test_confirm_returns_false_when_interactive_and_declined(monkeypatch):
-    monkeypatch.setattr("watson.tool_discovery._is_interactive", lambda: True)
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt="": "n")
 
     assert confirm("run floss?") is False
+
+
+_OPTIONS = [("y", "yara scanning"), ("c", "capa detection"), ("f", "floss extraction")]
+
+
+def test_select_options_returns_empty_set_when_not_interactive(monkeypatch):
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: False)
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("should not prompt when not interactive")
+
+    monkeypatch.setattr("builtins.input", fail_if_called)
+
+    assert select_options("pick some", _OPTIONS) == set()
+
+
+def test_select_options_parses_multiple_letters(monkeypatch):
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "yc")
+
+    assert select_options("pick some", _OPTIONS) == {"y", "c"}
+
+
+def test_select_options_all_key_selects_everything(monkeypatch):
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "a")
+
+    assert select_options("pick some", _OPTIONS) == {"y", "c", "f"}
+
+
+def test_select_options_blank_answer_selects_nothing(monkeypatch):
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")
+
+    assert select_options("pick some", _OPTIONS) == set()
+
+
+def test_select_options_none_key_selects_nothing_even_if_mixed_in(monkeypatch):
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "n")
+
+    assert select_options("pick some", _OPTIONS) == set()
+
+
+def test_select_options_ignores_unknown_letters(monkeypatch):
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "yz")
+
+    assert select_options("pick some", _OPTIONS) == {"y"}

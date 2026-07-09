@@ -17,15 +17,33 @@ class ToolStatus:
     reason: Optional[str]
 
 
-def _is_interactive() -> bool:
+def is_interactive() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
 
 def confirm(prompt: str) -> bool:
-    if not _is_interactive():
+    if not is_interactive():
         return False
     answer = input(f"{prompt} [y/N] ")
     return answer.strip().lower() == "y"
+
+
+def select_options(prompt: str, options: list, all_key: str = "a", none_key: str = "n") -> set:
+    if not is_interactive():
+        return set()
+    print(prompt)
+    for key, description in options:
+        print(f"  {key}  {description}")
+    print(f"  {all_key}  all of the above")
+    print(f"  {none_key}  none")
+    example = "".join(key for key, _ in options[:2])
+    answer = input(f'type the letters you want (e.g. "{example}"), or leave blank for none: ')
+    answer = answer.strip().lower()
+    if all_key in answer:
+        return {key for key, _ in options}
+    if not answer or none_key in answer:
+        return set()
+    return {key for key, _ in options if key in answer}
 
 
 def _offer_pip_install(name: str, pip_package: str) -> bool:
@@ -56,7 +74,7 @@ def find_binary(
     if found:
         return ToolStatus(name=name, available=True, path=found, reason=None)
 
-    if pip_package and not offline and _is_interactive():
+    if pip_package and not offline and is_interactive():
         if _offer_pip_install(name, pip_package):
             found = shutil.which(name)
             if found:
@@ -76,7 +94,7 @@ def _offer_git_clone(name: str, fetch_url: str, dest: Path) -> bool:
         return False
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run([git_path, "clone", "--depth", "1", "-q", fetch_url, str(dest)])
+    result = subprocess.run([git_path, "clone", "--depth", "1", "--progress", fetch_url, str(dest)])
     return result.returncode == 0
 
 
@@ -101,7 +119,7 @@ def find_or_fetch_dir(
     if cache_dir.is_dir() and any(cache_dir.iterdir()):
         return ToolStatus(name=name, available=True, path=str(cache_dir), reason=None)
 
-    if fetch_url and not offline and _is_interactive():
+    if fetch_url and not offline and is_interactive():
         if _offer_git_clone(name, fetch_url, cache_dir):
             if cache_dir.is_dir() and any(cache_dir.iterdir()):
                 return ToolStatus(name=name, available=True, path=str(cache_dir), reason=None)
@@ -120,7 +138,7 @@ def find_module(
     if importlib.util.find_spec(module_name) is not None:
         return ToolStatus(name=name, available=True, path=module_name, reason=None)
 
-    if pip_package and not offline and _is_interactive():
+    if pip_package and not offline and is_interactive():
         if _offer_pip_install(name, pip_package):
             importlib.invalidate_caches()
             if importlib.util.find_spec(module_name) is not None:

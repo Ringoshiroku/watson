@@ -7,7 +7,18 @@ import pytest
 from watson.cli import main
 
 
-def test_analyze_writes_case_and_prints_report(compiled_pe, tmp_path, capsys):
+def _isolate_rule_caches(monkeypatch, tmp_path):
+    # real ~/.watson/rules/* may already be populated on this machine from
+    # prior interactive fetches; point the caches at guaranteed-empty dirs so
+    # tests that don't pass --rules-dir/--capa-rules-dir stay fast and
+    # deterministic instead of silently running a real scan
+    monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", tmp_path / "unused-yara-cache")
+    monkeypatch.setattr("watson.cli.CAPA_RULES_CACHE", tmp_path / "unused-capa-cache")
+    monkeypatch.setattr("watson.cli.CAPA_SIGS_REPO_CACHE", tmp_path / "unused-capa-sigs-cache")
+
+
+def test_analyze_writes_case_and_prints_report(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
     out_dir = tmp_path / "cases"
 
     exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
@@ -45,7 +56,8 @@ def test_analyze_rejects_missing_file(tmp_path, capsys):
     assert "is not a file" in captured.err
 
 
-def test_analyze_with_rules_dir_reports_yara_match(compiled_pe, tmp_path, capsys):
+def test_analyze_with_rules_dir_reports_yara_match(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
     out_dir = tmp_path / "cases"
     rules_dir = Path(__file__).parent / "fixtures" / "rules"
 
@@ -65,9 +77,21 @@ def test_analyze_with_rules_dir_reports_yara_match(compiled_pe, tmp_path, capsys
     assert len(case_data["static"]["yara_matches"]) == 1
 
 
-def test_analyze_without_rules_dir_reports_yara_unavailable(compiled_pe, tmp_path, capsys, monkeypatch):
+def test_analyze_with_short_flags_reports_yara_match(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
     out_dir = tmp_path / "cases"
-    monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", tmp_path / "yara-cache")
+    rules_dir = Path(__file__).parent / "fixtures" / "rules"
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir), "-y", str(rules_dir)])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "watson_test_fixture_string" in captured.out
+
+
+def test_analyze_without_rules_dir_reports_yara_unavailable(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
 
     exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
 
@@ -82,7 +106,8 @@ def test_analyze_without_rules_dir_reports_yara_unavailable(compiled_pe, tmp_pat
     assert case_data["static"]["yara_matches"] == []
 
 
-def test_analyze_with_malformed_yara_rule_degrades_gracefully(compiled_pe, tmp_path, capsys):
+def test_analyze_with_malformed_yara_rule_degrades_gracefully(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
     out_dir = tmp_path / "cases"
     bad_rules_dir = tmp_path / "bad_rules"
     bad_rules_dir.mkdir()
@@ -109,7 +134,8 @@ requires_capa = pytest.mark.skipif(shutil.which("capa") is None, reason="capa no
 
 
 @requires_capa
-def test_analyze_with_capa_rules_dir_reports_capability(compiled_pe, tmp_path, capsys):
+def test_analyze_with_capa_rules_dir_reports_capability(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
     out_dir = tmp_path / "cases"
     capa_rules_dir = Path(__file__).parent / "fixtures" / "capa_rules"
 
@@ -137,8 +163,8 @@ def test_analyze_with_capa_rules_dir_reports_capability(compiled_pe, tmp_path, c
 
 
 def test_analyze_without_capa_rules_dir_reports_capa_unavailable(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
     out_dir = tmp_path / "cases"
-    monkeypatch.setattr("watson.cli.CAPA_RULES_CACHE", tmp_path / "capa-cache")
 
     exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
 
@@ -158,8 +184,9 @@ requires_floss = pytest.mark.skipif(shutil.which("floss") is None, reason="floss
 
 @requires_floss
 def test_analyze_with_floss_flag_writes_raw_sidecar_and_reports_available(
-    compiled_pe, tmp_path, capsys
+    compiled_pe, tmp_path, capsys, monkeypatch
 ):
+    _isolate_rule_caches(monkeypatch, tmp_path)
     out_dir = tmp_path / "cases"
 
     exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir), "--floss"])
@@ -175,16 +202,42 @@ def test_analyze_with_floss_flag_writes_raw_sidecar_and_reports_available(
     assert case_data["static"]["tools"]["floss"]["available"] is True
     assert "interesting_strings" in case_data["static"]
 
-    sha256 = case_data["identity"]["sha256"]
-    sidecar_path = out_dir / f"{sha256}_floss.json"
-    assert sidecar_path.exists()
+    sidecar_candidates = list(out_dir.glob("*_floss.json"))
+    assert len(sidecar_candidates) == 1
+    sidecar_path = sidecar_candidates[0]
+    # same base name as the case file, not the sha256, so the filename itself
+    # says what was scanned
+    assert sidecar_path.name == case_files[0].name.replace(".json", "_floss.json")
     sidecar_data = json.loads(sidecar_path.read_text())
     static_strings = [entry["string"] for entry in sidecar_data["strings"]["static_strings"]]
     assert "hello from watson test fixture" in static_strings
 
 
+def test_analyze_case_filename_uses_timestamp_and_binary_name_not_hash(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    case_files = list(out_dir.glob("*.json"))
+    assert len(case_files) == 1
+    name = case_files[0].name
+    case_data = json.loads(case_files[0].read_text())
+    md5 = case_data["identity"]["md5"]
+    # hh-mm-ss-DD-MM-YYYY-<sanitized name>-<md5>.json, dots replaced with
+    # dashes so it never reads like a double extension
+    assert name.count(".") == 1
+    assert name.endswith(f"-{compiled_pe.stem}-{compiled_pe.suffix.lstrip('.')}-{md5}.json")
+    sha256_only_name = out_dir / f"{case_data['identity']['sha256']}.json"
+    assert not sha256_only_name.exists()
+
+
 @requires_capa
-def test_analyze_with_capa_sigs_dir_passes_signatures_through(compiled_pe, tmp_path, capsys):
+def test_analyze_with_capa_sigs_dir_passes_signatures_through(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
     out_dir = tmp_path / "cases"
     capa_rules_dir = Path(__file__).parent / "fixtures" / "capa_rules"
     capa_sigs_dir = tmp_path / "sigs"
@@ -208,13 +261,36 @@ def test_analyze_with_capa_sigs_dir_passes_signatures_through(compiled_pe, tmp_p
     assert "capa: available" in captured.out
 
 
-def test_analyze_prompts_to_fetch_yara_rules_when_missing_and_interactive(
+def test_analyze_prompts_which_analyses_to_run_when_nothing_specified(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    # answer "n" to the analysis-selection prompt: nothing selected, nothing
+    # else should ever prompt after that
+    monkeypatch.setattr("builtins.input", lambda prompt="": "n")
+
+    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "which analyses do you want to run?" in captured.out
+    assert "yara: unavailable" in captured.out
+    assert "capa: unavailable" in captured.out
+    assert "floss: unavailable" in captured.out
+
+
+def test_analyze_prompts_to_fetch_yara_rules_when_selected_and_missing(
     compiled_pe, tmp_path, capsys, monkeypatch
 ):
     out_dir = tmp_path / "cases"
     monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", tmp_path / "yara-cache")
-    monkeypatch.setattr("watson.tool_discovery._is_interactive", lambda: True)
-    monkeypatch.setattr("builtins.input", lambda prompt="": "n")
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    # first answer selects only yara at the analysis prompt, second declines
+    # the follow-up "fetch it now" offer
+    answers = iter(["y", "n"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
 
     exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
 
@@ -222,6 +298,8 @@ def test_analyze_prompts_to_fetch_yara_rules_when_missing_and_interactive(
     captured = capsys.readouterr()
     assert "yara: unavailable" in captured.out
     assert "git clone" in captured.out
+    assert "capa: unavailable" in captured.out
+    assert "floss: unavailable" in captured.out
 
 
 def test_analyze_reuses_already_fetched_yara_rules_without_prompting(
@@ -268,23 +346,29 @@ def test_analyze_reuses_already_fetched_capa_rules_without_prompting(
 
 
 @requires_floss
-def test_analyze_prompts_to_run_floss_when_interactive_and_confirmed(
+def test_analyze_prompts_which_analyses_and_runs_floss_when_selected(
     compiled_pe, tmp_path, capsys, monkeypatch
 ):
+    _isolate_rule_caches(monkeypatch, tmp_path)
     out_dir = tmp_path / "cases"
-    monkeypatch.setattr("watson.tool_discovery._is_interactive", lambda: True)
-    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "f")
 
     exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
 
     assert exit_code == 0
     captured = capsys.readouterr()
     assert "floss: available" in captured.out
+    assert "yara: unavailable" in captured.out
+    assert "capa: unavailable" in captured.out
 
 
-def test_analyze_skips_floss_when_interactive_and_declined(compiled_pe, tmp_path, capsys, monkeypatch):
+def test_analyze_skips_everything_when_analysis_prompt_declined(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
     out_dir = tmp_path / "cases"
-    monkeypatch.setattr("watson.tool_discovery._is_interactive", lambda: True)
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt="": "n")
 
     exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
@@ -296,19 +380,36 @@ def test_analyze_skips_floss_when_interactive_and_declined(compiled_pe, tmp_path
 
 def test_analyze_with_explicit_floss_flag_never_prompts(compiled_pe, tmp_path, capsys, monkeypatch):
     out_dir = tmp_path / "cases"
-    monkeypatch.setattr("watson.tool_discovery._is_interactive", lambda: True)
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
 
     def fail_if_called(*args, **kwargs):
         raise AssertionError("should not prompt when --floss is explicit")
 
     monkeypatch.setattr("builtins.input", fail_if_called)
 
-    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir), "--floss"])
+    exit_code = main(
+        [
+            "analyze",
+            str(compiled_pe),
+            "--out",
+            str(out_dir),
+            "--rules-dir",
+            str(empty_dir),
+            "--capa-rules-dir",
+            str(empty_dir),
+            "--capa-sigs-dir",
+            str(empty_dir),
+            "--floss",
+        ]
+    )
 
     assert exit_code == 0
 
 
-def test_analyze_without_floss_flag_reports_floss_unavailable(compiled_pe, tmp_path, capsys):
+def test_analyze_without_floss_flag_reports_floss_unavailable(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
     out_dir = tmp_path / "cases"
 
     exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
@@ -323,3 +424,46 @@ def test_analyze_without_floss_flag_reports_floss_unavailable(compiled_pe, tmp_p
     assert case_data["static"]["tools"]["floss"]["available"] is False
     assert case_data["static"]["interesting_strings"] == []
     assert not list(out_dir.glob("*_floss.json"))
+
+
+def test_analyze_prompts_for_custom_out_dir_when_not_given(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    custom_dir = tmp_path / "my-custom-cases"
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    # first answer: yes, use a custom dir; second: the path; third: decline
+    # the analysis-selection prompt so the run stays fast
+    answers = iter(["y", str(custom_dir), "n"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+
+    exit_code = main(["analyze", str(compiled_pe)])
+
+    assert exit_code == 0
+    assert list(custom_dir.glob("*.json"))
+
+
+def test_analyze_defaults_to_cases_dir_when_out_prompt_declined(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    answers = iter(["n", "n"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+
+    exit_code = main(["analyze", str(compiled_pe)])
+
+    assert exit_code == 0
+    assert list((tmp_path / "cases").glob("*.json"))
+
+
+def test_analyze_with_explicit_out_flag_never_prompts_for_output_dir(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    answers = iter(["n"])  # only the analysis-selection prompt should fire
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+
+    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    assert list(out_dir.glob("*.json"))
