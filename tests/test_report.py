@@ -88,6 +88,51 @@ def _sample_case_with_yara_and_tools() -> Case:
     return Case(identity=identity, static=static)
 
 
+def test_build_text_report_shows_summary_section():
+    case = _sample_case_with_yara_and_tools()
+
+    report = build_text_report(case)
+
+    assert "Summary" in report
+    assert "YARA: 1 rule(s) matched" in report
+    assert "  YARA rules: watson_test_fixture_string" in report
+
+
+def test_summary_section_appears_before_tools_section():
+    case = _sample_case_with_yara_and_tools()
+
+    report = build_text_report(case)
+
+    assert report.index("Summary") < report.index("Tools")
+
+
+def test_build_json_report_includes_summary():
+    case = _sample_case_with_yara_and_tools()
+
+    report = build_json_report(case)
+
+    assert report["summary"]["yara_matches"] == {
+        "count": 1,
+        "rules": ["watson_test_fixture_string"],
+    }
+
+
+def test_build_json_report_summary_counts_capabilities_by_tactic():
+    case = _sample_case_with_capabilities()
+
+    report = build_json_report(case)
+
+    assert report["summary"]["capabilities"] == {"count": 1, "tactics": {"Ungrouped": 1}}
+
+
+def test_build_json_report_summary_counts_strings_by_reason():
+    case = _sample_case_with_interesting_strings()
+
+    report = build_json_report(case)
+
+    assert report["summary"]["interesting_strings"] == {"count": 1, "by_reason": {"url": 1}}
+
+
 def test_build_text_report_shows_tools_and_yara_matches():
     case = _sample_case_with_yara_and_tools()
 
@@ -97,7 +142,7 @@ def test_build_text_report_shows_tools_and_yara_matches():
     assert "watson_test_fixture_string" in report
 
 
-def test_build_text_report_shows_yara_match_detail():
+def _sample_case_with_yara_match_detail() -> Case:
     identity = Identity(
         sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
     )
@@ -117,13 +162,27 @@ def test_build_text_report_shows_yara_match_detail():
         ],
         tools={"yara": {"available": True, "reason": None}},
     )
-    case = Case(identity=identity, static=static)
+    return Case(identity=identity, static=static)
 
-    report = build_text_report(case)
+
+def test_build_text_report_shows_yara_match_detail_when_verbose():
+    case = _sample_case_with_yara_match_detail()
+
+    report = build_text_report(case, verbose=True)
 
     assert "malware" in report
     assert "0x1000" in report or "4096" in report
     assert "evil.example.com" in report
+
+
+def test_build_text_report_hides_yara_match_detail_by_default():
+    case = _sample_case_with_yara_match_detail()
+
+    report = build_text_report(case)
+
+    assert "malware" in report
+    assert "suspicious_string" in report
+    assert "evil.example.com" not in report
 
 
 def test_build_text_report_shows_no_yara_matches_when_empty():
@@ -248,6 +307,96 @@ def test_build_text_report_shows_capability_attack_and_mbc_as_structured_dicts()
     assert "{'parts'" not in report
 
 
+def test_build_text_report_groups_capabilities_by_attack_tactic():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        capabilities=[
+            {
+                "rule": "query registry",
+                "namespace": "host-interaction/registry",
+                "attack": ["Discovery::Query Registry [T1012]"],
+                "mbc": [],
+            },
+            {
+                "rule": "connect to socket",
+                "namespace": "communication/socket",
+                "attack": ["Command and Control::Non-Standard Port [T1571]"],
+                "mbc": [],
+            },
+        ],
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "\nDiscovery\n" in report
+    assert "\nCommand and Control\n" in report
+    assert "query registry" in report
+    assert "connect to socket" in report
+
+
+def test_build_text_report_shows_multi_tactic_capability_under_each_tactic():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        capabilities=[
+            {
+                "rule": "inject into remote process",
+                "namespace": "host-interaction/process/inject",
+                "attack": [
+                    "Defense Evasion::Process Injection [T1055]",
+                    "Privilege Escalation::Process Injection [T1055]",
+                ],
+                "mbc": [],
+            }
+        ],
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert report.count("inject into remote process") == 2
+    assert "\nDefense Evasion\n" in report
+    assert "\nPrivilege Escalation\n" in report
+
+
+def test_build_text_report_puts_ungrouped_tactic_bucket_last():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        capabilities=[
+            {"rule": "no mapping capability", "namespace": "misc", "attack": [], "mbc": []},
+            {
+                "rule": "query registry",
+                "namespace": "host-interaction/registry",
+                "attack": ["Discovery::Query Registry [T1012]"],
+                "mbc": [],
+            },
+        ],
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert report.index("Discovery") < report.index("Ungrouped")
+
+
 def test_build_text_report_shows_no_capabilities_when_empty():
     identity = Identity(
         sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe"
@@ -290,13 +439,13 @@ def _sample_case_with_interesting_strings() -> Case:
     return Case(identity=identity, static=static)
 
 
-def test_build_text_report_shows_interesting_strings():
+def test_build_text_report_groups_interesting_strings_by_reason():
     case = _sample_case_with_interesting_strings()
 
     report = build_text_report(case)
 
-    assert "http://evil.example.com/payload.bin" in report
-    assert "[url]" in report
+    assert "\nurl\n" in report
+    assert "  http://evil.example.com/payload.bin (decoded_strings)" in report
 
 
 def test_build_text_report_shows_no_interesting_strings_when_empty():
