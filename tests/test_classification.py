@@ -161,6 +161,64 @@ def test_classify_falls_back_to_trojan_when_evidence_exists_but_unspecific():
     assert result["verdict"] == "trojan"
 
 
+def test_classify_detects_ransomware_via_mixed_attack_tactic_and_mbc_objective():
+    capabilities = [
+        {
+            "rule": "destroy volume shadow copies",
+            "namespace": "impact/data-destruction",
+            "attack": [
+                {"parts": ["Impact", "Inhibit System Recovery"], "tactic": "Impact", "id": "T1490"},
+            ],
+            "mbc": [
+                {"parts": ["Cryptography", "Encrypt Data"], "objective": "Cryptography", "id": "C0027"},
+            ],
+        }
+    ]
+
+    result = classify(yara_matches=[], capabilities=capabilities, likely_packed=False, tools={})
+
+    assert result["verdict"] == "ransomware"
+
+
+def test_classify_detects_worm_via_dict_form_attack_entry():
+    capabilities = [
+        {
+            "rule": "copy to removable drive",
+            "namespace": "host-interaction/file-system",
+            "attack": [
+                {
+                    "parts": ["Lateral Movement", "Replication Through Removable Media"],
+                    "tactic": "Lateral Movement",
+                    "id": "T1091",
+                },
+            ],
+            "mbc": [],
+        }
+    ]
+
+    result = classify(yara_matches=[], capabilities=capabilities, likely_packed=False, tools={})
+
+    assert result["verdict"] == "worm"
+
+
+def test_classify_priority_order_ransomware_wins_over_worm_when_both_signals_present():
+    capabilities = [
+        {
+            "rule": "encrypt and spread",
+            "namespace": "impact/data-destruction",
+            "attack": ["Lateral Movement::Replication Through Removable Media [T1091]"],
+            "mbc": [
+                {"parts": ["Cryptography", "Encrypt Data"], "objective": "Cryptography", "id": "C0027"},
+                {"parts": ["Impact", "Data Encrypted"], "objective": "Impact", "id": "F0002"},
+            ],
+        }
+    ]
+
+    result = classify(yara_matches=[], capabilities=capabilities, likely_packed=False, tools={})
+
+    assert result["verdict"] == "ransomware"
+
+
 def test_classify_unclassified_when_no_evidence_at_all():
     tools = {
         "yara": {"available": True, "reason": None},
