@@ -467,3 +467,43 @@ def test_analyze_with_explicit_out_flag_never_prompts_for_output_dir(
 
     assert exit_code == 0
     assert list(out_dir.glob("*.json"))
+
+
+def test_analyze_shows_scan_progress_lines(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    rules_dir = Path(__file__).parent / "fixtures" / "rules"
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir), "-y", str(rules_dir)])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "running YARA scan..." in captured.out
+    assert "done: YARA scan" in captured.out
+
+
+def test_analyze_verbose_flag_shows_yara_match_detail(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    rules_dir = Path(__file__).parent / "fixtures" / "rules"
+
+    exit_code = main(
+        ["analyze", str(compiled_pe), "-o", str(out_dir), "-y", str(rules_dir), "-v"]
+    )
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "hello from watson test fixture" in captured.out
+
+
+def test_analyze_without_verbose_hides_yara_match_detail(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    rules_dir = Path(__file__).parent / "fixtures" / "rules"
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir), "-y", str(rules_dir)])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "watson_test_fixture_string" in captured.out
+    assert "hello from watson test fixture" not in captured.out

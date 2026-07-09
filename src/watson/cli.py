@@ -12,7 +12,7 @@ from watson.hashing import compute_hashes
 from watson.ioc_strings import find_interesting_strings
 from watson.pe_metadata import InvalidPEError, extract_pe_metadata
 from watson.report import build_text_report
-from watson import tool_discovery
+from watson import progress, tool_discovery
 from watson.tool_discovery import confirm, find_binary, find_module, find_or_fetch_dir, select_options
 from watson.yara_scan import YaraScanError, scan_file
 
@@ -86,7 +86,8 @@ def build_case(
             tools["yara"] = {"available": yara_status.available, "reason": yara_status.reason}
             if yara_status.available:
                 try:
-                    yara_matches = scan_file(file_path, Path(yara_dir_status.path))
+                    with progress.stage("YARA scan"):
+                        yara_matches = scan_file(file_path, Path(yara_dir_status.path))
                 except YaraScanError as exc:
                     tools["yara"] = {"available": False, "reason": f"yara scan failed: {exc}"}
         else:
@@ -118,9 +119,10 @@ def build_case(
                     if sigs_repo_status.available:
                         resolved_sigs_dir = Path(sigs_repo_status.path) / "sigs"
                 try:
-                    capabilities = capa_scan_file(
-                        file_path, Path(capa_rules_status.path), signatures_dir=resolved_sigs_dir
-                    )
+                    with progress.stage("capa analysis"):
+                        capabilities = capa_scan_file(
+                            file_path, Path(capa_rules_status.path), signatures_dir=resolved_sigs_dir
+                        )
                 except CapaScanError as exc:
                     tools["capa"] = {"available": False, "reason": f"capa scan failed: {exc}"}
         else:
@@ -144,7 +146,8 @@ def build_case(
         tools["floss"] = {"available": floss_status.available, "reason": floss_status.reason}
         if floss_status.available:
             try:
-                floss_raw = floss_scan_file(file_path)
+                with progress.stage("FLOSS string extraction"):
+                    floss_raw = floss_scan_file(file_path)
                 interesting_strings = find_interesting_strings(flatten_strings(floss_raw))
             except FlossScanError as exc:
                 tools["floss"] = {"available": False, "reason": f"floss scan failed: {exc}"}
@@ -210,12 +213,25 @@ def main(argv: list | None = None) -> int:
             "written to <out>/<basename>_floss.json. Omit to be asked interactively."
         ),
     )
+    analyze_parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Show full YARA match detail (string offsets and matched bytes) in the text report",
+    )
 
     args = parser.parse_args(argv)
 
     if args.command == "analyze":
         return _run_analyze(
-            args.file, args.out, args.rules_dir, args.capa_rules_dir, args.capa_sigs_dir, args.floss
+            args.file,
+            args.out,
+            args.rules_dir,
+            args.capa_rules_dir,
+            args.capa_sigs_dir,
+            args.floss,
+            args.verbose,
         )
 
     return 1
@@ -238,6 +254,7 @@ def _run_analyze(
     capa_rules_dir: Path | None,
     capa_sigs_dir: Path | None,
     run_floss: bool | None,
+    verbose: bool,
 ) -> int:
     if not file_path.is_file():
         print(f"error: {file_path} is not a file", file=sys.stderr)
@@ -256,7 +273,7 @@ def _run_analyze(
         save_raw_output(floss_raw, out_dir, case.output_basename(now))
 
     case.save(out_dir, now)
-    print(build_text_report(case))
+    print(build_text_report(case, verbose=verbose))
     return 0
 
 
