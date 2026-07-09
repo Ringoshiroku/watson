@@ -28,7 +28,7 @@ CAPA_SIGS_REPO_CACHE = WATSON_HOME / "rules" / "capa-sigs-repo"
 CAPA_SIGS_URL = "https://github.com/mandiant/capa"
 DEFAULT_OUT_DIR = Path("cases")
 
-# Same letters as the -y/-c/-f short flags, so what you'd type at the prompt
+# Same letters as the -y/-c/-f/-d short flags, so what you'd type at the prompt
 # and what you'd pass on the command line to skip it match exactly.
 CAPABILITY_OPTIONS = [
     ("y", "YARA rule scanning (needs a rule set, fetched if missing)"),

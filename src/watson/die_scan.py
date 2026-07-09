@@ -25,25 +25,10 @@ def scan_file(file_path: Path, diec_binary: str = "diec", timeout: int = 60) -> 
         raise DieScanError(result.stderr.strip() or f"diec exited with code {result.returncode}")
 
     data = _parse_json(result.stdout)
-
-    return [
-        {
-            "filetype": detect.get("filetype"),
-            "values": [
-                {
-                    "type": value.get("type"),
-                    "name": value.get("name"),
-                    "version": value.get("version"),
-                    "string": value.get("string"),
-                }
-                for value in detect.get("values") or []
-            ],
-        }
-        for detect in data.get("detects") or []
-    ]
+    return _reshape_detects(data)
 
 
-def _parse_json(stdout: str) -> dict:
+def _load_json_object(stdout: str):
     try:
         return json.loads(stdout)
     except json.JSONDecodeError:
@@ -55,3 +40,33 @@ def _parse_json(stdout: str) -> dict:
             except json.JSONDecodeError as exc:
                 raise DieScanError(f"diec produced invalid JSON: {exc}") from exc
         raise DieScanError("diec produced invalid JSON: no JSON object found in output")
+
+
+def _parse_json(stdout: str) -> dict:
+    data = _load_json_object(stdout)
+    if not isinstance(data, dict):
+        raise DieScanError(
+            f"diec produced unexpected JSON (expected an object, got {type(data).__name__})"
+        )
+    return data
+
+
+def _reshape_detects(data: dict) -> list:
+    detects = []
+    for detect in data.get("detects") or []:
+        if not isinstance(detect, dict):
+            continue
+        values = []
+        for value in detect.get("values") or []:
+            if not isinstance(value, dict):
+                continue
+            values.append(
+                {
+                    "type": value.get("type"),
+                    "name": value.get("name"),
+                    "version": value.get("version"),
+                    "string": value.get("string"),
+                }
+            )
+        detects.append({"filetype": detect.get("filetype"), "values": values})
+    return detects
