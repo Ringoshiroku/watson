@@ -34,6 +34,7 @@ which analyses do you want to run?
   y  YARA rule scanning (needs a rule set, fetched if missing)
   c  capa capability / ATT&CK / MBC detection (needs capa + a rule set)
   f  FLOSS string extraction and IOC flagging
+  d  Detect It Easy packer/compiler/linker detection (needs diec installed)
   a  all of the above
   n  none
 type the letters you want (e.g. "yc"), or leave blank for none:
@@ -62,7 +63,7 @@ today.
 ## Usage
 
 ```
-watson analyze <file> [-o DIR] [-y DIR] [-c DIR] [-s DIR] [-f] [-v]
+watson analyze <file> [-o DIR] [-y DIR] [-c DIR] [-s DIR] [-f] [-d] [-v]
 ```
 
 Every flag has a short and a long form, so once you know what you want
@@ -93,6 +94,12 @@ you never have to go through a prompt again:
   report; only the flagged subset appears in the report and case JSON,
   the full dump goes to the sidecar file above. Omit to be asked
   interactively (or skipped, non-interactively).
+- `-d`, `--diec`, run Detect It Easy for file type, compiler, linker, and
+  packer/protector detection. Unlike YARA/capa/FLOSS, `diec` isn't
+  pip-installable, install it with your OS package manager (`sudo apt
+  install detect-it-easy` on Debian/Kali/Ubuntu, `choco install die` on
+  Windows) or from https://github.com/horsicq/Detect-It-Easy. Omit to be
+  asked interactively.
 - `-v`, `--verbose`, show full YARA match detail (string identifier, hex
   offset, matched bytes) in the text report. Omitted by default so the
   report stays skimmable, this detail is always present in the case JSON
@@ -159,14 +166,25 @@ won't tell you "Emotet", only "downloader") and not a numeric risk score.
 capa weren't run, or ran and found nothing), it's a statement about
 missing evidence, not a claim that the sample is safe.
 
+### Detect It Easy (`-d`/`--diec`)
+
+DIE gives a named signature-based read on the binary (file type,
+compiler, linker, and any detected packer/protector), complementing the
+entropy-only `Likely Packed` heuristic in PE Metadata with an actual
+name and version when one's found. It's report-only in this version,
+findings don't yet feed the Classification section's verdict or risk
+tier, that's a natural follow-up once real-world DIE output has been
+observed.
+
 ## Current scope and limitations
 
 Built so far: hashing (md5/sha1/sha256/imphash), PE metadata (sections,
 imports, timestamp, digital signature presence, packed-likely heuristic),
 YARA scanning, capa capability/ATT&CK/MBC analysis, FLOSS string
-extraction with IOC-pattern flagging, and a heuristic type/risk
-classification, all wired through `watson analyze`, with interactive
-setup for every optional rule set or tool.
+extraction with IOC-pattern flagging, a heuristic type/risk
+classification, and Detect It Easy file type/compiler/packer detection,
+all wired through `watson analyze`, with interactive setup for every
+optional rule set or tool.
 
 Known limitations in what's built so far:
 - Digital signature check is presence-only, not validity, signer, or
@@ -174,7 +192,7 @@ Known limitations in what's built so far:
 - IOC flagging is regex-based; see "IOC flagging" above for its known
   false-positive shape.
 
-Not yet built: Detect It Easy orchestration, batch/directory mode,
-dynamic analysis, and static/dynamic correlation. See the project's
-internal design docs for the full phased plan (not checked into this
-repo; ask if you need a copy).
+Not yet built: batch/directory mode, dynamic analysis, and
+static/dynamic correlation. See the project's internal design docs for
+the full phased plan (not checked into this repo; ask if you need a
+copy).
