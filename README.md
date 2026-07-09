@@ -61,7 +61,7 @@ today.
 ## Usage
 
 ```
-watson analyze <file> [-o DIR] [-y DIR] [-c DIR] [-s DIR] [-f]
+watson analyze <file> [-o DIR] [-y DIR] [-c DIR] [-s DIR] [-f] [-v]
 ```
 
 Every flag has a short and a long form, so once you know what you want
@@ -92,6 +92,10 @@ you never have to go through a prompt again:
   report; only the flagged subset appears in the report and case JSON,
   the full dump goes to the sidecar file above. Omit to be asked
   interactively (or skipped, non-interactively).
+- `-v`, `--verbose`, show full YARA match detail (string identifier, hex
+  offset, matched bytes) in the text report. Omitted by default so the
+  report stays skimmable, this detail is always present in the case JSON
+  regardless of this flag.
 
 Passing any of `-y`/`-c`/`-s`/`-f` skips the analysis-selection prompt
 entirely for the ones you specified and uses (or requires) exactly the
@@ -113,6 +117,28 @@ a known, structurally-unavoidable false positive, and a handful of
 well-known X.509/ASN.1 OID arcs are explicitly excluded since they'd
 otherwise dominate the "ip" category in any binary that touches
 certificates or crypto.
+
+### Report layout
+
+Each run prints scan progress as it happens (`running YARA scan... 3s`,
+then `done: YARA scan (3.2s)`), so a long-running capa or FLOSS pass on a
+real sample doesn't look hung.
+
+The text report and case JSON both lead with a Summary section (counts
+and highlights: matched YARA rule names, ATT&CK tactics touched, flagged
+string reasons) ahead of the full per-tool detail. Capa capabilities are
+grouped by ATT&CK tactic instead of listed flat, so you can scan tactics
+first and drill into the rule that produced each one; capabilities with
+no ATT&CK mapping land in an `Ungrouped` bucket at the end rather than
+being dropped. Flagged strings are grouped by reason (ip, url,
+registry_key, windows_path, email) the same way.
+
+Report layout takes structural inspiration from capa's own tactic-grouped
+terminal renderer (https://github.com/mandiant/capa), PEStudio's
+indicator-first summaries (https://pestudiodownload.com/), and
+CAPE/Cuckoo's summary-before-detail sandbox reports
+(https://capev2.readthedocs.io/en/latest/usage/results.html). No text or
+code from any of them is copied, only the general shape.
 
 ## Current scope and limitations
 
