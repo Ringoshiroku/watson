@@ -1,3 +1,5 @@
+import pytest
+
 from watson.classification import classify
 
 
@@ -178,6 +180,10 @@ def test_classify_detects_ransomware_via_mixed_attack_tactic_and_mbc_objective()
     result = classify(yara_matches=[], capabilities=capabilities, likely_packed=False, tools={})
 
     assert result["verdict"] == "ransomware"
+    assert result["reasoning"] == [
+        "capa detected Impact behavior (ATT&CK) alongside Cryptography behavior (MBC), "
+        "consistent with ransomware"
+    ]
 
 
 def test_classify_detects_worm_via_dict_form_attack_entry():
@@ -340,3 +346,57 @@ def test_classify_unclassified_reasoning_when_neither_tool_ran():
         "YARA was not run (not requested (skipped at the analysis-selection prompt))",
         "capa was not run (not requested (skipped at the analysis-selection prompt))",
     ]
+
+
+@pytest.mark.parametrize(
+    "verdict,yara_matches,capabilities",
+    [
+        (
+            "ransomware",
+            [{"rule": "generic_ransomware_dropper", "tags": [], "matches": []}],
+            [],
+        ),
+        (
+            "worm",
+            [{"rule": "win32_worm_generic", "tags": ["Worm"], "matches": []}],
+            [],
+        ),
+        (
+            "infostealer",
+            [{"rule": "generic_stealer_variant", "tags": ["Stealer"], "matches": []}],
+            [],
+        ),
+        (
+            "backdoor",
+            [{"rule": "generic_backdoor_implant", "tags": [], "matches": []}],
+            [],
+        ),
+        (
+            "downloader",
+            [{"rule": "generic_downloader", "tags": [], "matches": []}],
+            [],
+        ),
+        (
+            "adware",
+            [{"rule": "generic_adware_installer", "tags": [], "matches": []}],
+            [],
+        ),
+        (
+            "trojan",
+            [],
+            [
+                {
+                    "rule": "read file",
+                    "namespace": "host-interaction/file-system/read",
+                    "attack": ["Execution::Command and Scripting Interpreter [T1059]"],
+                    "mbc": [],
+                }
+            ],
+        ),
+    ],
+)
+def test_classify_every_non_unclassified_verdict_has_nonempty_reasoning(verdict, yara_matches, capabilities):
+    result = classify(yara_matches=yara_matches, capabilities=capabilities, likely_packed=False, tools={})
+
+    assert result["verdict"] == verdict
+    assert result["reasoning"] != []

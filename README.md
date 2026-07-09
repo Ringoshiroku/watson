@@ -150,8 +150,8 @@ Every run produces a coarse classification: a type label (`ransomware`,
 `unclassified`), a risk tier (`low`/`medium`/`high`), and a plain-language
 list of exactly which evidence drove the call. It's computed entirely
 from the YARA/capa signals already collected, no extra tool, setup, or
-flag needed, and it's the first thing both the text report and the case
-JSON lead with.
+flag needed. It leads the text report, and it's present in the saved
+case JSON alongside every other finding.
 
 This is a heuristic type category, not malware family attribution (it
 won't tell you "Emotet", only "downloader") and not a numeric risk score.

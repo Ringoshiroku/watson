@@ -146,6 +146,11 @@ def _reasoning(
                 reasoning.append(
                     "capa detected Cryptography and Impact behavior (MBC), consistent with ransomware"
                 )
+            elif "Impact" in tactics and "Cryptography" in objectives:
+                reasoning.append(
+                    "capa detected Impact behavior (ATT&CK) alongside Cryptography behavior (MBC), "
+                    "consistent with ransomware"
+                )
             if _yara_keyword_hit(yara_matches, substrings=_RANSOMWARE_KEYWORDS):
                 reasoning.append("a YARA rule matched with a ransomware-related tag or name")
         elif verdict == "worm":
