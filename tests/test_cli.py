@@ -521,3 +521,39 @@ def test_analyze_without_verbose_hides_yara_match_detail(compiled_pe, tmp_path, 
     captured = capsys.readouterr()
     assert "watson_test_fixture_string" in captured.out
     assert "hello from watson test fixture" not in captured.out
+
+
+def test_analyze_includes_classification_in_report_and_saved_case(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    rules_dir = Path(__file__).parent / "fixtures" / "rules"
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir), "-y", str(rules_dir)])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "Classification" in captured.out
+    assert "Verdict:" in captured.out
+
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads(case_files[0].read_text())
+    assert case_data["static"]["classification"] is not None
+    assert "verdict" in case_data["static"]["classification"]
+
+
+def test_analyze_classification_is_unclassified_when_nothing_matches(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    empty_rules_dir = tmp_path / "empty-rules"
+    empty_rules_dir.mkdir()
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir), "-y", str(empty_rules_dir)])
+
+    assert exit_code == 0
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads(case_files[0].read_text())
+    assert case_data["static"]["classification"]["verdict"] == "unclassified"

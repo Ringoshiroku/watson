@@ -9,6 +9,7 @@ from watson.case import Case, Identity, PEMetadata, StaticSection
 from watson.capa_scan import CapaScanError, scan_file as capa_scan_file
 from watson.floss_scan import FlossScanError, flatten_strings, save_raw_output, scan_file as floss_scan_file
 from watson.hashing import compute_hashes
+from watson.classification import classify
 from watson.ioc_strings import find_interesting_strings
 from watson.pe_metadata import InvalidPEError, extract_pe_metadata
 from watson.report import build_json_report, build_text_report
@@ -158,12 +159,15 @@ def build_case(
             "reason": "floss not requested (use --floss)",
         }
 
+    classification = classify(yara_matches, capabilities, pe_metadata.likely_packed, tools)
+
     static = StaticSection(
         pe_metadata=pe_metadata,
         yara_matches=yara_matches,
         tools=tools,
         capabilities=capabilities,
         interesting_strings=interesting_strings,
+        classification=classification,
     )
     return Case(identity=identity, static=static), floss_raw
 
