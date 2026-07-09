@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import platform
 import sys
 from datetime import datetime
 from pathlib import Path
 
 from watson.case import Case, Identity, PEMetadata, StaticSection
 from watson.capa_scan import CapaScanError, scan_file as capa_scan_file
+from watson.die_scan import DieScanError, scan_file as die_scan_file
 from watson.floss_scan import FlossScanError, flatten_strings, save_raw_output, scan_file as floss_scan_file
 from watson.hashing import compute_hashes
 from watson.classification import classify
@@ -32,7 +34,23 @@ CAPABILITY_OPTIONS = [
     ("y", "YARA rule scanning (needs a rule set, fetched if missing)"),
     ("c", "capa capability / ATT&CK / MBC detection (needs capa + a rule set)"),
     ("f", "FLOSS string extraction and IOC flagging"),
+    ("d", "Detect It Easy packer/compiler/linker detection (needs diec installed)"),
 ]
+
+
+def _die_install_hint() -> str:
+    system = platform.system()
+    if system == "Linux":
+        return (
+            "on Debian/Kali/Ubuntu, install with 'sudo apt install detect-it-easy'; "
+            "otherwise see https://github.com/horsicq/Detect-It-Easy"
+        )
+    if system == "Windows":
+        return (
+            "install with 'choco install die' (Chocolatey), or see "
+            "https://github.com/horsicq/Detect-It-Easy/releases"
+        )
+    return "see https://github.com/horsicq/Detect-It-Easy for install instructions"
 
 
 def build_case(
@@ -41,6 +59,7 @@ def build_case(
     capa_rules_dir: Path | None = None,
     capa_sigs_dir: Path | None = None,
     run_floss: bool | None = None,
+    run_die: bool | None = None,
 ) -> tuple:
     hashes = compute_hashes(file_path)
     metadata = extract_pe_metadata(file_path)
@@ -69,11 +88,18 @@ def build_case(
     # already decided via flags; explicit flags (any one of them) skip this
     # entirely and fall through to each capability's own resolution below,
     # same as before this prompt existed
-    if rules_dir is None and capa_rules_dir is None and run_floss is None and tool_discovery.is_interactive():
+    if (
+        rules_dir is None
+        and capa_rules_dir is None
+        and run_floss is None
+        and run_die is None
+        and tool_discovery.is_interactive()
+    ):
         selected = select_options("which analyses do you want to run?", CAPABILITY_OPTIONS)
         attempt_yara = "y" in selected
         attempt_capa = "c" in selected
         run_floss = "f" in selected
+        run_die = "d" in selected
 
     tools = {}
     yara_matches = []
@@ -159,6 +185,31 @@ def build_case(
             "reason": "floss not requested (use --floss)",
         }
 
+    die_detections = []
+
+    if run_die is None:
+        run_die = confirm(
+            f"run Detect It Easy packer/compiler/linker detection on {file_path.name}?"
+        )
+
+    if run_die:
+        die_status = find_binary("diec", pip_package=None)
+        if die_status.available:
+            tools["diec"] = {"available": True, "reason": None}
+            try:
+                with progress.stage("Detect It Easy scan"):
+                    die_detections = die_scan_file(file_path)
+            except DieScanError as exc:
+                tools["diec"] = {"available": False, "reason": f"diec scan failed: {exc}"}
+                die_detections = []
+        else:
+            tools["diec"] = {"available": False, "reason": _die_install_hint()}
+    else:
+        tools["diec"] = {
+            "available": False,
+            "reason": "diec not requested (use --diec)",
+        }
+
     classification = classify(yara_matches, capabilities, pe_metadata.likely_packed, tools)
 
     static = StaticSection(
@@ -168,6 +219,7 @@ def build_case(
         capabilities=capabilities,
         interesting_strings=interesting_strings,
         classification=classification,
+        die_detections=die_detections,
     )
     return Case(identity=identity, static=static), floss_raw
 
@@ -218,6 +270,16 @@ def main(argv: list | None = None) -> int:
         ),
     )
     analyze_parser.add_argument(
+        "-d",
+        "--diec",
+        action="store_true",
+        default=None,
+        help=(
+            "Run Detect It Easy for packer/compiler/linker detection (needs diec on PATH, "
+            "not pip-installable). Omit to be asked interactively."
+        ),
+    )
+    analyze_parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -235,6 +297,7 @@ def main(argv: list | None = None) -> int:
             args.capa_rules_dir,
             args.capa_sigs_dir,
             args.floss,
+            args.diec,
             args.verbose,
         )
 
@@ -258,6 +321,7 @@ def _run_analyze(
     capa_rules_dir: Path | None,
     capa_sigs_dir: Path | None,
     run_floss: bool | None,
+    run_die: bool | None,
     verbose: bool,
 ) -> int:
     if not file_path.is_file():
@@ -267,7 +331,9 @@ def _run_analyze(
     out_dir = _resolve_out_dir(out_dir)
 
     try:
-        case, floss_raw = build_case(file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss)
+        case, floss_raw = build_case(
+            file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die
+        )
     except InvalidPEError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

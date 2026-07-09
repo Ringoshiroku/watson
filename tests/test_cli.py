@@ -416,6 +416,7 @@ def test_analyze_with_explicit_floss_flag_never_prompts(compiled_pe, tmp_path, c
             "--capa-sigs-dir",
             str(empty_dir),
             "--floss",
+            "--diec",
         ]
     )
 
@@ -557,3 +558,58 @@ def test_analyze_classification_is_unclassified_when_nothing_matches(
     case_files = list(out_dir.glob("*.json"))
     case_data = json.loads(case_files[0].read_text())
     assert case_data["static"]["classification"]["verdict"] == "unclassified"
+
+
+def test_analyze_without_diec_flag_reports_diec_not_requested(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    rules_dir = Path(__file__).parent / "fixtures" / "rules"
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir), "-y", str(rules_dir)])
+
+    assert exit_code == 0
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads(case_files[0].read_text())
+    assert case_data["static"]["tools"]["diec"]["reason"] == "diec not requested (use --diec)"
+    assert case_data["static"]["die_detections"] == []
+
+
+def test_analyze_diec_unavailable_reason_mentions_apt_on_linux(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    original_which = shutil.which
+    monkeypatch.setattr(
+        "watson.tool_discovery.shutil.which",
+        lambda name: None if name == "diec" else original_which(name),
+    )
+    monkeypatch.setattr("watson.cli.platform.system", lambda: "Linux")
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir), "-d"])
+
+    assert exit_code == 0
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads(case_files[0].read_text())
+    assert "apt install detect-it-easy" in case_data["static"]["tools"]["diec"]["reason"]
+    assert case_data["static"]["die_detections"] == []
+
+
+def test_analyze_diec_unavailable_reason_mentions_chocolatey_on_windows(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    original_which = shutil.which
+    monkeypatch.setattr(
+        "watson.tool_discovery.shutil.which",
+        lambda name: None if name == "diec" else original_which(name),
+    )
+    monkeypatch.setattr("watson.cli.platform.system", lambda: "Windows")
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir), "-d"])
+
+    assert exit_code == 0
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads(case_files[0].read_text())
+    assert "choco install die" in case_data["static"]["tools"]["diec"]["reason"]
