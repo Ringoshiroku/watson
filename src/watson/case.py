@@ -31,6 +31,7 @@ class StaticSection:
     yara_matches: list = field(default_factory=list)
     tools: dict = field(default_factory=dict)
     capabilities: list = field(default_factory=list)
+    interesting_strings: list = field(default_factory=list)
 
 
 @dataclass
@@ -51,6 +52,7 @@ class Case:
             yara_matches=static_data.get("yara_matches", []),
             tools=static_data.get("tools", {}),
             capabilities=static_data.get("capabilities", []),
+            interesting_strings=static_data.get("interesting_strings", []),
         )
         return cls(identity=identity, static=static)
 

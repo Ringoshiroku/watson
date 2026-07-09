@@ -6,7 +6,9 @@ from pathlib import Path
 
 from watson.case import Case, Identity, PEMetadata, StaticSection
 from watson.capa_scan import CapaScanError, scan_file as capa_scan_file
+from watson.floss_scan import FlossScanError, flatten_strings, save_raw_output, scan_file as floss_scan_file
 from watson.hashing import compute_hashes
+from watson.ioc_strings import find_interesting_strings
 from watson.pe_metadata import InvalidPEError, extract_pe_metadata
 from watson.report import build_text_report
 from watson.tool_discovery import find_binary, find_module
@@ -14,8 +16,11 @@ from watson.yara_scan import YaraScanError, scan_file
 
 
 def build_case(
-    file_path: Path, rules_dir: Path | None = None, capa_rules_dir: Path | None = None
-) -> Case:
+    file_path: Path,
+    rules_dir: Path | None = None,
+    capa_rules_dir: Path | None = None,
+    run_floss: bool = False,
+) -> tuple:
     hashes = compute_hashes(file_path)
     metadata = extract_pe_metadata(file_path)
 
@@ -67,13 +72,33 @@ def build_case(
             "reason": "no capa rules directory provided (use --capa-rules-dir)",
         }
 
+    interesting_strings = []
+    floss_raw = None
+
+    if run_floss:
+        floss_status = find_binary("floss", pip_package="flare-floss")
+        tools["floss"] = {"available": floss_status.available, "reason": floss_status.reason}
+        if floss_status.available:
+            try:
+                floss_raw = floss_scan_file(file_path)
+                interesting_strings = find_interesting_strings(flatten_strings(floss_raw))
+            except FlossScanError as exc:
+                tools["floss"] = {"available": False, "reason": f"floss scan failed: {exc}"}
+                floss_raw = None
+    else:
+        tools["floss"] = {
+            "available": False,
+            "reason": "floss not requested (use --floss)",
+        }
+
     static = StaticSection(
         pe_metadata=pe_metadata,
         yara_matches=yara_matches,
         tools=tools,
         capabilities=capabilities,
+        interesting_strings=interesting_strings,
     )
-    return Case(identity=identity, static=static)
+    return Case(identity=identity, static=static), floss_raw
 
 
 def main(argv: list | None = None) -> int:
@@ -97,27 +122,43 @@ def main(argv: list | None = None) -> int:
         default=None,
         help="Directory of capa rule files to scan the sample with",
     )
+    analyze_parser.add_argument(
+        "--floss",
+        action="store_true",
+        help=(
+            "Run FLOSS to extract all strings (including deobfuscated stack/tight/decoded "
+            "strings); only IOC-like matches appear in the report, the full raw output is "
+            "written to <out>/<sha256>_floss.json"
+        ),
+    )
 
     args = parser.parse_args(argv)
 
     if args.command == "analyze":
-        return _run_analyze(args.file, args.out, args.rules_dir, args.capa_rules_dir)
+        return _run_analyze(args.file, args.out, args.rules_dir, args.capa_rules_dir, args.floss)
 
     return 1
 
 
 def _run_analyze(
-    file_path: Path, out_dir: Path, rules_dir: Path | None, capa_rules_dir: Path | None
+    file_path: Path,
+    out_dir: Path,
+    rules_dir: Path | None,
+    capa_rules_dir: Path | None,
+    run_floss: bool,
 ) -> int:
     if not file_path.is_file():
         print(f"error: {file_path} is not a file", file=sys.stderr)
         return 1
 
     try:
-        case = build_case(file_path, rules_dir, capa_rules_dir)
+        case, floss_raw = build_case(file_path, rules_dir, capa_rules_dir, run_floss)
     except InvalidPEError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+
+    if floss_raw is not None:
+        save_raw_output(floss_raw, out_dir, case.identity.sha256)
 
     case.save(out_dir)
     print(build_text_report(case))
