@@ -22,6 +22,23 @@ def _render_classification_lines(classification: dict | None) -> list:
     return lines
 
 
+def _render_die_lines(die_detections: list) -> list:
+    lines = ["Detect It Easy", "-" * 14]
+    if not die_detections:
+        lines.append("  none")
+        return lines
+    for detect in die_detections:
+        filetype = detect.get("filetype") or "unknown"
+        lines.append(f"  File Type: {filetype}")
+        for value in detect.get("values") or []:
+            label = value.get("type") or "Detection"
+            name = value.get("name") or ""
+            version = value.get("version")
+            detail = f"{name} ({version})" if version else name
+            lines.append(f"    {label}: {detail}")
+    return lines
+
+
 def _format_mapping_entry(entry) -> str:
     if isinstance(entry, str):
         return entry
@@ -141,6 +158,8 @@ def build_text_report(case: Case, verbose: bool = False) -> str:
     lines.append(f"Compile Timestamp: {pe.compile_timestamp or 'N/A'}")
     lines.append(f"Digital Signature Present: {pe.has_digital_signature}")
     lines.append(f"Likely Packed: {pe.likely_packed}")
+    lines.append("")
+    lines.extend(_render_die_lines(case.static.die_detections))
     lines.append("")
     lines.append("Sections")
     lines.append("-" * 8)

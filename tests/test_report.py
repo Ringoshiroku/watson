@@ -513,3 +513,52 @@ def test_build_text_report_shows_no_interesting_strings_when_empty():
 
     assert "Interesting Strings" in report
     assert "none" in report
+
+
+def _sample_case_with_die_detections() -> Case:
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        die_detections=[
+            {
+                "filetype": "PE64",
+                "values": [
+                    {"type": "Compiler", "name": "Microsoft Visual C/C++", "version": "19.29", "string": None},
+                    {"type": "Packer", "name": "UPX", "version": "3.96", "string": None},
+                ],
+            }
+        ],
+    )
+    return Case(identity=identity, static=static)
+
+
+def test_build_text_report_shows_die_detections():
+    case = _sample_case_with_die_detections()
+
+    report = build_text_report(case)
+
+    assert "Detect It Easy" in report
+    assert "File Type: PE64" in report
+    assert "Compiler: Microsoft Visual C/C++ (19.29)" in report
+    assert "Packer: UPX (3.96)" in report
+
+
+def test_die_section_appears_after_pe_metadata_and_before_sections():
+    case = _sample_case_with_die_detections()
+
+    report = build_text_report(case)
+
+    assert report.index("PE Metadata") < report.index("Detect It Easy") < report.index("Sections")
+
+
+def test_build_text_report_shows_no_die_detections_when_empty():
+    case = _sample_case()
+
+    report = build_text_report(case)
+
+    assert "Detect It Easy" in report
