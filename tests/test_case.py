@@ -335,3 +335,68 @@ def test_case_load_tolerates_json_missing_interesting_strings_field(tmp_path):
     loaded = Case.load(case_path)
 
     assert loaded.static.interesting_strings == []
+
+
+def test_static_section_defaults_classification_to_none_when_omitted():
+    pe_metadata = PEMetadata(
+        machine="0x8664",
+        compile_timestamp=None,
+        sections=[],
+        imports={},
+        has_digital_signature=False,
+    )
+
+    static = StaticSection(pe_metadata=pe_metadata)
+
+    assert static.classification is None
+
+
+def test_case_round_trips_classification():
+    identity = Identity(sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe")
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        classification={"verdict": "trojan", "risk": "medium", "reasoning": ["example"]},
+    )
+    case = Case(identity=identity, static=static)
+
+    restored = Case.from_dict(case.to_dict())
+
+    assert restored.static.classification == {
+        "verdict": "trojan",
+        "risk": "medium",
+        "reasoning": ["example"],
+    }
+
+
+def test_case_load_tolerates_json_missing_classification_field(tmp_path):
+    data_without_classification = {
+        "identity": {
+            "sha256": "a" * 64,
+            "sha1": "b" * 40,
+            "md5": "c" * 32,
+            "imphash": None,
+            "file_name": "sample.exe",
+        },
+        "static": {
+            "pe_metadata": {
+                "machine": "0x8664",
+                "compile_timestamp": None,
+                "sections": [],
+                "imports": {},
+                "has_digital_signature": False,
+            },
+            "yara_matches": [],
+            "tools": {},
+            "capabilities": [],
+            "interesting_strings": [],
+        },
+    }
+    case_path = tmp_path / (("a" * 64) + ".json")
+    case_path.write_text(json.dumps(data_without_classification))
+
+    loaded = Case.load(case_path)
+
+    assert loaded.static.classification is None

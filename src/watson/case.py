@@ -46,6 +46,7 @@ class StaticSection:
     tools: dict = field(default_factory=dict)
     capabilities: list = field(default_factory=list)
     interesting_strings: list = field(default_factory=list)
+    classification: Optional[dict] = None
 
 
 @dataclass
@@ -67,6 +68,7 @@ class Case:
             tools=static_data.get("tools", {}),
             capabilities=static_data.get("capabilities", []),
             interesting_strings=static_data.get("interesting_strings", []),
+            classification=static_data.get("classification"),
         )
         return cls(identity=identity, static=static)
 
