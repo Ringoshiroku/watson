@@ -47,6 +47,7 @@ class StaticSection:
     capabilities: list = field(default_factory=list)
     interesting_strings: list = field(default_factory=list)
     classification: Optional[dict] = None
+    die_detections: list = field(default_factory=list)
 
 
 @dataclass
@@ -69,6 +70,7 @@ class Case:
             capabilities=static_data.get("capabilities", []),
             interesting_strings=static_data.get("interesting_strings", []),
             classification=static_data.get("classification"),
+            die_detections=static_data.get("die_detections", []),
         )
         return cls(identity=identity, static=static)
 

@@ -400,3 +400,79 @@ def test_case_load_tolerates_json_missing_classification_field(tmp_path):
     loaded = Case.load(case_path)
 
     assert loaded.static.classification is None
+
+
+def test_static_section_defaults_die_detections_when_omitted():
+    pe_metadata = PEMetadata(
+        machine="0x8664",
+        compile_timestamp=None,
+        sections=[],
+        imports={},
+        has_digital_signature=False,
+    )
+
+    static = StaticSection(pe_metadata=pe_metadata)
+
+    assert static.die_detections == []
+
+
+def test_case_round_trips_die_detections():
+    identity = Identity(sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe")
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        die_detections=[
+            {
+                "filetype": "PE64",
+                "values": [
+                    {"type": "Packer", "name": "UPX", "version": "3.96", "string": None},
+                ],
+            }
+        ],
+    )
+    case = Case(identity=identity, static=static)
+
+    restored = Case.from_dict(case.to_dict())
+
+    assert restored.static.die_detections == [
+        {
+            "filetype": "PE64",
+            "values": [
+                {"type": "Packer", "name": "UPX", "version": "3.96", "string": None},
+            ],
+        }
+    ]
+
+
+def test_case_load_tolerates_json_missing_die_detections_field(tmp_path):
+    data_without_die_detections = {
+        "identity": {
+            "sha256": "a" * 64,
+            "sha1": "b" * 40,
+            "md5": "c" * 32,
+            "imphash": None,
+            "file_name": "sample.exe",
+        },
+        "static": {
+            "pe_metadata": {
+                "machine": "0x8664",
+                "compile_timestamp": None,
+                "sections": [],
+                "imports": {},
+                "has_digital_signature": False,
+            },
+            "yara_matches": [],
+            "tools": {},
+            "capabilities": [],
+            "interesting_strings": [],
+            "classification": None,
+        },
+    }
+    case_path = tmp_path / (("a" * 64) + ".json")
+    case_path.write_text(json.dumps(data_without_die_detections))
+
+    loaded = Case.load(case_path)
+
+    assert loaded.static.die_detections == []
