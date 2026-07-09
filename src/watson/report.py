@@ -9,6 +9,19 @@ def build_json_report(case: Case) -> dict:
     return report
 
 
+def _render_classification_lines(classification: dict | None) -> list:
+    lines = ["Classification", "-" * 14]
+    if classification is None:
+        lines.append("  not computed")
+        return lines
+    lines.append(f"Verdict: {classification['verdict']}")
+    lines.append(f"Risk: {classification['risk']}")
+    lines.append("Reasoning:")
+    for reason in classification["reasoning"]:
+        lines.append(f"  - {reason}")
+    return lines
+
+
 def _format_mapping_entry(entry) -> str:
     if isinstance(entry, str):
         return entry
@@ -106,6 +119,8 @@ def build_text_report(case: Case, verbose: bool = False) -> str:
     lines.append("=" * 30)
     lines.append("Watson Static Analysis Report")
     lines.append("=" * 30)
+    lines.append("")
+    lines.extend(_render_classification_lines(case.static.classification))
     lines.append("")
     lines.append("Sample")
     lines.append("-" * 6)

@@ -413,6 +413,57 @@ def test_build_text_report_shows_no_capabilities_when_empty():
     assert "none" in report
 
 
+def _sample_case_with_classification() -> Case:
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        classification={
+            "verdict": "ransomware",
+            "risk": "high",
+            "reasoning": [
+                "capa detected Cryptography and Impact behavior (MBC), consistent with ransomware"
+            ],
+        },
+    )
+    return Case(identity=identity, static=static)
+
+
+def test_build_text_report_shows_classification_section():
+    case = _sample_case_with_classification()
+
+    report = build_text_report(case)
+
+    assert "Classification" in report
+    assert "Verdict: ransomware" in report
+    assert "Risk: high" in report
+    assert (
+        "  - capa detected Cryptography and Impact behavior (MBC), consistent with ransomware"
+        in report
+    )
+
+
+def test_classification_section_appears_before_sample_section():
+    case = _sample_case_with_classification()
+
+    report = build_text_report(case)
+
+    assert report.index("Classification") < report.index("Sample")
+
+
+def test_build_text_report_shows_not_computed_when_classification_missing():
+    case = _sample_case()
+
+    report = build_text_report(case)
+
+    assert "Classification" in report
+    assert "not computed" in report
+
+
 def _sample_case_with_interesting_strings() -> Case:
     identity = Identity(
         sha256="a" * 64,
