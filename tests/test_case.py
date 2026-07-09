@@ -177,6 +177,66 @@ def test_case_load_tolerates_json_missing_capabilities_field(tmp_path):
     assert loaded.static.capabilities == []
 
 
+def test_pe_metadata_defaults_machine_name_and_likely_packed_when_omitted():
+    pe_metadata = PEMetadata(
+        machine="0x8664",
+        compile_timestamp=None,
+        sections=[],
+        imports={},
+        has_digital_signature=False,
+    )
+
+    assert pe_metadata.machine_name == ""
+    assert pe_metadata.likely_packed is False
+
+
+def test_case_round_trips_machine_name_and_likely_packed():
+    identity = Identity(sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe")
+    pe_metadata = PEMetadata(
+        machine="0x8664",
+        compile_timestamp=None,
+        sections=[],
+        imports={},
+        has_digital_signature=False,
+        machine_name="x64 (AMD64)",
+        likely_packed=True,
+    )
+    case = Case(identity=identity, static=StaticSection(pe_metadata=pe_metadata))
+
+    restored = Case.from_dict(case.to_dict())
+
+    assert restored.static.pe_metadata.machine_name == "x64 (AMD64)"
+    assert restored.static.pe_metadata.likely_packed is True
+
+
+def test_case_load_tolerates_old_format_json_missing_machine_name_and_likely_packed(tmp_path):
+    old_format_data = {
+        "identity": {
+            "sha256": "a" * 64,
+            "sha1": "b" * 40,
+            "md5": "c" * 32,
+            "imphash": None,
+            "file_name": "sample.exe",
+        },
+        "static": {
+            "pe_metadata": {
+                "machine": "0x8664",
+                "compile_timestamp": None,
+                "sections": [],
+                "imports": {},
+                "has_digital_signature": False,
+            }
+        },
+    }
+    case_path = tmp_path / (("a" * 64) + ".json")
+    case_path.write_text(json.dumps(old_format_data))
+
+    loaded = Case.load(case_path)
+
+    assert loaded.static.pe_metadata.machine_name == ""
+    assert loaded.static.pe_metadata.likely_packed is False
+
+
 def test_static_section_defaults_interesting_strings_when_omitted():
     pe_metadata = PEMetadata(
         machine="0x8664",

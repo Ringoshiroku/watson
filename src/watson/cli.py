@@ -11,15 +11,24 @@ from watson.hashing import compute_hashes
 from watson.ioc_strings import find_interesting_strings
 from watson.pe_metadata import InvalidPEError, extract_pe_metadata
 from watson.report import build_text_report
-from watson.tool_discovery import find_binary, find_module
+from watson.tool_discovery import confirm, find_binary, find_module, find_or_fetch_dir
 from watson.yara_scan import YaraScanError, scan_file
+
+WATSON_HOME = Path.home() / ".watson"
+YARA_RULES_CACHE = WATSON_HOME / "rules" / "yara-rules"
+YARA_RULES_URL = "https://github.com/Yara-Rules/rules"
+CAPA_RULES_CACHE = WATSON_HOME / "rules" / "capa-rules"
+CAPA_RULES_URL = "https://github.com/mandiant/capa-rules"
+CAPA_SIGS_REPO_CACHE = WATSON_HOME / "rules" / "capa-sigs-repo"
+CAPA_SIGS_URL = "https://github.com/mandiant/capa"
 
 
 def build_case(
     file_path: Path,
     rules_dir: Path | None = None,
     capa_rules_dir: Path | None = None,
-    run_floss: bool = False,
+    capa_sigs_dir: Path | None = None,
+    run_floss: bool | None = None,
 ) -> tuple:
     hashes = compute_hashes(file_path)
     metadata = extract_pe_metadata(file_path)
@@ -37,43 +46,62 @@ def build_case(
         sections=metadata["sections"],
         imports=metadata["imports"],
         has_digital_signature=metadata["has_digital_signature"],
+        machine_name=metadata["machine_name"],
+        likely_packed=metadata["likely_packed"],
     )
 
     tools = {}
     yara_matches = []
 
-    if rules_dir is not None:
+    yara_dir_status = find_or_fetch_dir(
+        "YARA rules", rules_dir, cache_dir=YARA_RULES_CACHE, fetch_url=YARA_RULES_URL
+    )
+    if yara_dir_status.available:
         yara_status = find_module("yara", "yara", pip_package="yara-python")
         tools["yara"] = {"available": yara_status.available, "reason": yara_status.reason}
         if yara_status.available:
             try:
-                yara_matches = scan_file(file_path, rules_dir)
+                yara_matches = scan_file(file_path, Path(yara_dir_status.path))
             except YaraScanError as exc:
                 tools["yara"] = {"available": False, "reason": f"yara scan failed: {exc}"}
     else:
-        tools["yara"] = {
-            "available": False,
-            "reason": "no rules directory provided (use --rules-dir)",
-        }
+        tools["yara"] = {"available": False, "reason": yara_dir_status.reason}
 
     capabilities = []
 
-    if capa_rules_dir is not None:
+    capa_rules_status = find_or_fetch_dir(
+        "capa rules", capa_rules_dir, cache_dir=CAPA_RULES_CACHE, fetch_url=CAPA_RULES_URL
+    )
+    if capa_rules_status.available:
         capa_status = find_binary("capa", pip_package="flare-capa")
         tools["capa"] = {"available": capa_status.available, "reason": capa_status.reason}
         if capa_status.available:
+            resolved_sigs_dir = capa_sigs_dir
+            if resolved_sigs_dir is None:
+                sigs_repo_status = find_or_fetch_dir(
+                    "capa FLIRT signatures",
+                    None,
+                    cache_dir=CAPA_SIGS_REPO_CACHE,
+                    fetch_url=CAPA_SIGS_URL,
+                )
+                if sigs_repo_status.available:
+                    resolved_sigs_dir = Path(sigs_repo_status.path) / "sigs"
             try:
-                capabilities = capa_scan_file(file_path, capa_rules_dir)
+                capabilities = capa_scan_file(
+                    file_path, Path(capa_rules_status.path), signatures_dir=resolved_sigs_dir
+                )
             except CapaScanError as exc:
                 tools["capa"] = {"available": False, "reason": f"capa scan failed: {exc}"}
     else:
-        tools["capa"] = {
-            "available": False,
-            "reason": "no capa rules directory provided (use --capa-rules-dir)",
-        }
+        tools["capa"] = {"available": False, "reason": capa_rules_status.reason}
 
     interesting_strings = []
     floss_raw = None
+
+    if run_floss is None:
+        run_floss = confirm(
+            f"run FLOSS string extraction on {file_path.name} (finds strings, flags possible IOCs)?"
+        )
 
     if run_floss:
         floss_status = find_binary("floss", pip_package="flare-floss")
@@ -123,19 +151,28 @@ def main(argv: list | None = None) -> int:
         help="Directory of capa rule files to scan the sample with",
     )
     analyze_parser.add_argument(
+        "--capa-sigs-dir",
+        type=Path,
+        default=None,
+        help="Directory of capa FLIRT signature files, improves library-function identification",
+    )
+    analyze_parser.add_argument(
         "--floss",
         action="store_true",
+        default=None,
         help=(
             "Run FLOSS to extract all strings (including deobfuscated stack/tight/decoded "
             "strings); only IOC-like matches appear in the report, the full raw output is "
-            "written to <out>/<sha256>_floss.json"
+            "written to <out>/<sha256>_floss.json. Omit to be asked interactively."
         ),
     )
 
     args = parser.parse_args(argv)
 
     if args.command == "analyze":
-        return _run_analyze(args.file, args.out, args.rules_dir, args.capa_rules_dir, args.floss)
+        return _run_analyze(
+            args.file, args.out, args.rules_dir, args.capa_rules_dir, args.capa_sigs_dir, args.floss
+        )
 
     return 1
 
@@ -145,14 +182,15 @@ def _run_analyze(
     out_dir: Path,
     rules_dir: Path | None,
     capa_rules_dir: Path | None,
-    run_floss: bool,
+    capa_sigs_dir: Path | None,
+    run_floss: bool | None,
 ) -> int:
     if not file_path.is_file():
         print(f"error: {file_path} is not a file", file=sys.stderr)
         return 1
 
     try:
-        case, floss_raw = build_case(file_path, rules_dir, capa_rules_dir, run_floss)
+        case, floss_raw = build_case(file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss)
     except InvalidPEError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

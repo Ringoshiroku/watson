@@ -1,10 +1,11 @@
-from watson.pe_metadata import extract_pe_metadata, InvalidPEError
+from watson.pe_metadata import _is_likely_packed, _machine_name, extract_pe_metadata, InvalidPEError
 
 
 def test_extract_pe_metadata_reads_real_pe(compiled_pe):
     metadata = extract_pe_metadata(compiled_pe)
 
     assert metadata["machine"] == "0x8664"
+    assert metadata["machine_name"] == "x64 (AMD64)"
     assert metadata["compile_timestamp"] is not None
     assert len(metadata["sections"]) > 0
     assert any(s["name"].startswith(".text") for s in metadata["sections"])
@@ -13,6 +14,35 @@ def test_extract_pe_metadata_reads_real_pe(compiled_pe):
     assert "msvcrt.dll" in {dll.lower() for dll in metadata["imports"]}
     assert metadata["has_digital_signature"] is False
     assert metadata["imphash"] is not None
+    # a freshly compiled hello-world binary is not packed
+    assert metadata["likely_packed"] is False
+
+
+def test_machine_name_maps_known_codes():
+    assert _machine_name(0x8664) == "x64 (AMD64)"
+    assert _machine_name(0x14C) == "x86 (I386)"
+    assert _machine_name(0xAA64) == "ARM64"
+
+
+def test_machine_name_falls_back_for_unknown_code():
+    assert "unknown" in _machine_name(0xDEAD).lower()
+    assert "0xdead" in _machine_name(0xDEAD).lower()
+
+
+def test_is_likely_packed_true_when_any_section_entropy_high():
+    sections = [{"entropy": 3.1}, {"entropy": 7.6}]
+
+    assert _is_likely_packed(sections) is True
+
+
+def test_is_likely_packed_false_when_all_sections_low_entropy():
+    sections = [{"entropy": 3.1}, {"entropy": 5.9}]
+
+    assert _is_likely_packed(sections) is False
+
+
+def test_is_likely_packed_false_for_no_sections():
+    assert _is_likely_packed([]) is False
 
 
 def test_extract_pe_metadata_rejects_non_pe_file(tmp_path):

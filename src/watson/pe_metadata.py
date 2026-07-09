@@ -11,6 +11,26 @@ class InvalidPEError(Exception):
     """Raised when the target file is not a valid PE binary."""
 
 
+_MACHINE_NAMES = {
+    0x14C: "x86 (I386)",
+    0x8664: "x64 (AMD64)",
+    0x1C0: "ARM",
+    0x1C4: "ARM Thumb-2",
+    0xAA64: "ARM64",
+    0x200: "Itanium",
+}
+
+_PACKED_ENTROPY_THRESHOLD = 7.2
+
+
+def _machine_name(code: int) -> str:
+    return _MACHINE_NAMES.get(code, f"unknown ({hex(code)})")
+
+
+def _is_likely_packed(sections: list) -> bool:
+    return any(section["entropy"] >= _PACKED_ENTROPY_THRESHOLD for section in sections)
+
+
 def extract_pe_metadata(file_path: Path) -> dict:
     try:
         pe = pefile.PE(str(file_path))
@@ -35,11 +55,13 @@ def extract_pe_metadata(file_path: Path) -> dict:
 
         return {
             "machine": machine,
+            "machine_name": _machine_name(pe.FILE_HEADER.Machine),
             "compile_timestamp": compile_timestamp,
             "sections": sections,
             "imports": imports,
             "has_digital_signature": has_digital_signature,
             "imphash": imphash,
+            "likely_packed": _is_likely_packed(sections),
         }
     finally:
         pe.close()

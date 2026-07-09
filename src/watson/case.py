@@ -23,6 +23,8 @@ class PEMetadata:
     sections: list
     imports: dict
     has_digital_signature: bool
+    machine_name: str = ""
+    likely_packed: bool = False
 
 
 @dataclass

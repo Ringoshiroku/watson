@@ -21,6 +21,13 @@ def _is_interactive() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
 
+def confirm(prompt: str) -> bool:
+    if not _is_interactive():
+        return False
+    answer = input(f"{prompt} [y/N] ")
+    return answer.strip().lower() == "y"
+
+
 def _offer_pip_install(name: str, pip_package: str) -> bool:
     answer = input(f"{name} is not installed. install it now with 'pip install {pip_package}'? [y/N] ")
     if answer.strip().lower() != "y":
@@ -57,6 +64,50 @@ def find_binary(
 
     reason = f"{name} not found on PATH"
     reason += f"; install with 'pip install {pip_package}'" if pip_package else "; install it manually"
+    return ToolStatus(name=name, available=False, path=None, reason=reason)
+
+
+def _offer_git_clone(name: str, fetch_url: str, dest: Path) -> bool:
+    git_path = shutil.which("git")
+    if git_path is None:
+        return False
+    answer = input(f"{name} not found locally. fetch it now with 'git clone {fetch_url}'? [y/N] ")
+    if answer.strip().lower() != "y":
+        return False
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run([git_path, "clone", "--depth", "1", "-q", fetch_url, str(dest)])
+    return result.returncode == 0
+
+
+def find_or_fetch_dir(
+    name: str,
+    configured_path: Optional[Path],
+    cache_dir: Path,
+    fetch_url: Optional[str] = None,
+    offline: bool = False,
+) -> ToolStatus:
+    if configured_path is not None:
+        if Path(configured_path).is_dir():
+            return ToolStatus(name=name, available=True, path=str(configured_path), reason=None)
+        return ToolStatus(
+            name=name,
+            available=False,
+            path=None,
+            reason=f"configured path for {name} ({configured_path}) does not exist",
+        )
+
+    cache_dir = Path(cache_dir)
+    if cache_dir.is_dir() and any(cache_dir.iterdir()):
+        return ToolStatus(name=name, available=True, path=str(cache_dir), reason=None)
+
+    if fetch_url and not offline and _is_interactive():
+        if _offer_git_clone(name, fetch_url, cache_dir):
+            if cache_dir.is_dir() and any(cache_dir.iterdir()):
+                return ToolStatus(name=name, available=True, path=str(cache_dir), reason=None)
+
+    reason = f"{name} not found locally"
+    reason += f"; fetch with 'git clone {fetch_url} {cache_dir}'" if fetch_url else "; provide a path manually"
     return ToolStatus(name=name, available=False, path=None, reason=reason)
 
 
