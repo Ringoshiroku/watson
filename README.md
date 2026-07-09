@@ -26,19 +26,33 @@ out to whichever of them is on `PATH`.
 watson analyze <file>
 ```
 
-That's it, no setup required first. Each optional capability (YARA rules,
-capa rules/signatures, FLOSS) is checked at run time, and if something's
-missing, watson asks you right there whether to fetch or install it:
+That's it, no setup required first. Watson asks which analyses to run:
+
+```
+which analyses do you want to run?
+  y  YARA rule scanning (needs a rule set, fetched if missing)
+  c  capa capability / ATT&CK / MBC detection (needs capa + a rule set)
+  f  FLOSS string extraction and IOC flagging
+  a  all of the above
+  n  none
+type the letters you want (e.g. "yc"), or leave blank for none:
+```
+
+Pick what you want, and if the underlying rule set isn't on disk yet, it
+asks again, per capability, whether to fetch it:
 
 ```
 YARA rules not found locally. fetch it now with 'git clone https://github.com/Yara-Rules/rules'? [y/N]
 ```
 
 Say yes and watson fetches it (a `git clone` for rule sets, a `pip
-install` for the capa/FLOSS CLIs) into a cache under `~/.watson/rules/`
-and continues. Say no and watson tells you what you'll be missing for
-this run and keeps going with everything else. Once fetched, later runs
-reuse the cache silently, no repeat prompts.
+install` for the capa/FLOSS CLIs), streaming the real fetch/install
+output as it happens, into a cache under `~/.watson/rules/` and
+continues. Say no and watson tells you what you'll be missing for this
+run and keeps going with everything else. Once fetched, later runs reuse
+the cache silently, no repeat prompts. If `--out` isn't given either,
+you're asked once whether to use a custom output directory instead of
+the `cases` default.
 
 Non-interactive runs (scripts, CI, piped input) never prompt: anything
 not explicitly supplied via a flag is just reported unavailable, same as
@@ -47,33 +61,58 @@ today.
 ## Usage
 
 ```
-watson analyze <file> [--out DIR] [--rules-dir DIR] [--capa-rules-dir DIR] [--capa-sigs-dir DIR] [--floss]
+watson analyze <file> [-o DIR] [-y DIR] [-c DIR] [-s DIR] [-f]
 ```
 
-- `<file>`, the PE file to analyze.
-- `--out DIR`, directory to write output to (default `cases`). Always
-  writes `<out>/<sha256>.json` (the full case); also writes
-  `<out>/<sha256>_floss.json` (FLOSS's complete, unfiltered string dump,
-  easily thousands of entries) when FLOSS runs.
-- `--rules-dir DIR`, use this exact YARA rule directory instead of the
-  interactive fetch/cache flow (recurses into subdirectories, matches
-  both `.yar` and `.yara`). Explicit path, no prompt either way.
-- `--capa-rules-dir DIR`, same, for capa's rule set.
-- `--capa-sigs-dir DIR`, same, for capa's FLIRT signatures (identifies
-  statically-linked library functions; capa still works without them,
-  just with weaker library-function ID). Skipped by default unless you
-  opt in, since it's a full extra clone for one subdirectory.
-- `--floss`, run FLOSS and flag IOC-like matches (IP addresses, URLs,
-  Windows registry keys, Windows paths, email addresses) in the report;
-  only the flagged subset appears in the report and case JSON, the full
-  dump goes to the sidecar file above. Omit to be asked interactively
-  (or skipped, non-interactively).
+Every flag has a short and a long form, so once you know what you want
+you never have to go through a prompt again:
 
-Any of these flags skips that capability's prompt entirely and uses (or
-requires) exactly the path you gave.
+- `<file>`, the PE file to analyze.
+- `-o DIR`, `--out DIR`, directory to write output to (default `cases`,
+  asked interactively if omitted). Always writes
+  `<out>/<timestamp>-<name>-<md5>.json` (the full case); also writes
+  `<out>/<timestamp>-<name>-<md5>_floss.json` (FLOSS's complete,
+  unfiltered string dump, easily thousands of entries) when FLOSS runs.
+  `<timestamp>` is `hh-mm-ss-DD-MM-YYYY` at the moment the run finished,
+  `<name>` is the scanned file's own name with dots swapped for dashes
+  (so `rb.exe` becomes `rb-exe`, never a `rb.exe.json`-style double
+  extension), `<md5>` is the sample's MD5. Named this way instead of by
+  hash alone so the filename itself tells you what it is.
+- `-y DIR`, `--rules-dir DIR`, use this exact YARA rule directory instead
+  of the interactive fetch/cache flow (recurses into subdirectories,
+  matches both `.yar` and `.yara`, and skips over any individual rule
+  file that fails to compile instead of losing the whole ruleset).
+  Explicit path, no prompt either way.
+- `-c DIR`, `--capa-rules-dir DIR`, same, for capa's rule set.
+- `-s DIR`, `--capa-sigs-dir DIR`, same, for capa's FLIRT signatures
+  (identifies statically-linked library functions; capa still works
+  without them, just with weaker library-function ID).
+- `-f`, `--floss`, run FLOSS and flag IOC-like matches (IP addresses,
+  URLs, Windows registry keys, Windows paths, email addresses) in the
+  report; only the flagged subset appears in the report and case JSON,
+  the full dump goes to the sidecar file above. Omit to be asked
+  interactively (or skipped, non-interactively).
+
+Passing any of `-y`/`-c`/`-s`/`-f` skips the analysis-selection prompt
+entirely for the ones you specified and uses (or requires) exactly the
+path you gave; the rest still get asked about normally unless you supply
+those too.
 
 Each run prints a text report to stdout. The JSON case file has
 everything the text report has.
+
+### IOC flagging (`-f`/`--floss`)
+
+FLOSS extracts every string in a binary, easily thousands, so watson only
+promotes a filtered subset (IP addresses, URLs, registry keys, Windows
+paths, emails) into the report and case JSON; the complete raw dump
+always goes to the sidecar file for when you need it. The filter is
+regex-plus-validation, not a classifier, so treat it as a starting point:
+version numbers that happen to look like a dotted-quad IP (`1.0.0.0`) are
+a known, structurally-unavoidable false positive, and a handful of
+well-known X.509/ASN.1 OID arcs are explicitly excluded since they'd
+otherwise dominate the "ip" category in any binary that touches
+certificates or crypto.
 
 ## Current scope and limitations
 
@@ -86,6 +125,8 @@ with interactive setup for every optional rule set or tool.
 Known limitations in what's built so far:
 - Digital signature check is presence-only, not validity, signer, or
   trust chain.
+- IOC flagging is regex-based; see "IOC flagging" above for its known
+  false-positive shape.
 
 Not yet built: Detect It Easy orchestration, malware classification and
 risk scoring, batch/directory mode, dynamic analysis, and static/dynamic
