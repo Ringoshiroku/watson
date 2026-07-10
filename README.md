@@ -239,7 +239,7 @@ scanned: 50 files
   failed: 2
 
 Failed:
-  corrupt.exe: yara scan failed: ...
+  corrupt.exe: unexpected error parsing PE headers
   locked.exe: permission denied
 ```
 
