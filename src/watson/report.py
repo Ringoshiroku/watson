@@ -4,14 +4,156 @@ from watson.case import Case
 
 
 def build_json_report(case: Case) -> dict:
-    return case.to_dict()
+    report = case.to_dict()
+    report["summary"] = _build_summary(case)
+    return report
 
 
-def build_text_report(case: Case) -> str:
+def _render_classification_lines(classification: dict | None) -> list:
+    lines = ["Classification", "-" * 14]
+    if classification is None:
+        lines.append("  not computed")
+        return lines
+    detection = classification.get("detection")
+    if detection:
+        lines.append(f"Detection: {detection}")
+    lines.append(f"Verdict: {classification['verdict']}")
+    lines.append(f"Risk: {classification['risk']}")
+    lines.append("Reasoning:")
+    for reason in classification["reasoning"]:
+        lines.append(f"  - {reason}")
+    return lines
+
+
+def _render_die_lines(die_detections: list) -> list:
+    lines = ["Detect It Easy", "-" * 14]
+    if not die_detections:
+        lines.append("  none")
+        return lines
+    for detect in die_detections:
+        filetype = detect.get("filetype") or "unknown"
+        lines.append(f"  File Type: {filetype}")
+        for value in detect.get("values") or []:
+            label = value.get("type") or "Detection"
+            name = value.get("name") or ""
+            version = value.get("version")
+            detail = f"{name} ({version})" if version else name
+            lines.append(f"    {label}: {detail}")
+    return lines
+
+
+def _format_mapping_entry(entry) -> str:
+    if isinstance(entry, str):
+        return entry
+    parts = entry.get("parts") or []
+    label = "::".join(parts) if parts else entry.get("name", str(entry))
+    entry_id = entry.get("id")
+    return f"{label} [{entry_id}]" if entry_id else label
+
+
+def _format_capa_evidence_line(evidence: dict) -> str:
+    feature = evidence.get("feature") or "feature"
+    value = evidence.get("value")
+    addresses = evidence.get("addresses") or []
+    more = evidence.get("more_addresses", 0)
+    if not addresses:
+        return f"    {feature}: {value}"
+    addr_text = ", ".join(hex(a) for a in addresses)
+    if more:
+        addr_text += f" (+{more} more)"
+    return f"    {feature}: {value} @ {addr_text}"
+
+
+def _attack_tactic(entry) -> str:
+    if isinstance(entry, str):
+        return entry.split("::", 1)[0] if "::" in entry else "Ungrouped"
+    parts = entry.get("parts") or []
+    return entry.get("tactic") or (parts[0] if parts else "Ungrouped")
+
+
+def _capability_tactics(capability: dict) -> list:
+    attack = capability.get("attack") or []
+    if not attack:
+        return ["Ungrouped"]
+    tactics = []
+    for entry in attack:
+        tactic = _attack_tactic(entry)
+        if tactic not in tactics:
+            tactics.append(tactic)
+    return tactics
+
+
+def _group_capabilities_by_tactic(capabilities: list) -> dict:
+    grouped: dict = {}
+    for capability in capabilities:
+        for tactic in _capability_tactics(capability):
+            grouped.setdefault(tactic, []).append(capability)
+    return grouped
+
+
+def _group_strings_by_reason(findings: list) -> dict:
+    grouped: dict = {}
+    for finding in findings:
+        grouped.setdefault(finding["reason"], []).append(finding)
+    return grouped
+
+
+def _build_summary(case: Case) -> dict:
+    yara_rules = [match["rule"] for match in case.static.yara_matches]
+
+    tactic_counts: dict = {}
+    for capability in case.static.capabilities:
+        for tactic in _capability_tactics(capability):
+            tactic_counts[tactic] = tactic_counts.get(tactic, 0) + 1
+
+    reason_counts: dict = {}
+    for finding in case.static.interesting_strings:
+        reason = finding["reason"]
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
+    return {
+        "yara_matches": {"count": len(yara_rules), "rules": yara_rules},
+        "capabilities": {"count": len(case.static.capabilities), "tactics": tactic_counts},
+        "interesting_strings": {
+            "count": len(case.static.interesting_strings),
+            "by_reason": reason_counts,
+        },
+    }
+
+
+def _render_summary_lines(summary: dict) -> list:
+    lines = ["Summary", "-" * 7]
+    yara = summary["yara_matches"]
+    capabilities = summary["capabilities"]
+    strings = summary["interesting_strings"]
+
+    lines.append(f"YARA: {yara['count']} rule(s) matched")
+    lines.append(
+        f"Capabilities: {capabilities['count']} finding(s) across "
+        f"{len(capabilities['tactics'])} ATT&CK tactic(s)"
+    )
+    reason_summary = ", ".join(
+        f"{reason}: {count}" for reason, count in sorted(strings["by_reason"].items())
+    )
+    reason_suffix = f" ({reason_summary})" if reason_summary else ""
+    lines.append(f"Strings: {strings['count']} flagged{reason_suffix}")
+
+    if yara["rules"]:
+        lines.append(f"  YARA rules: {', '.join(yara['rules'])}")
+    tactics_only = sorted(t for t in capabilities["tactics"] if t != "Ungrouped")
+    if tactics_only:
+        lines.append(f"  ATT&CK tactics: {', '.join(tactics_only)}")
+
+    return lines
+
+
+def build_text_report(case: Case, verbose: bool = False) -> str:
     lines = []
     lines.append("=" * 30)
     lines.append("Watson Static Analysis Report")
     lines.append("=" * 30)
+    lines.append("")
+    lines.extend(_render_classification_lines(case.static.classification))
     lines.append("")
     lines.append("Sample")
     lines.append("-" * 6)
@@ -27,9 +169,13 @@ def build_text_report(case: Case) -> str:
     lines.append("PE Metadata")
     lines.append("-" * 11)
     pe = case.static.pe_metadata
-    lines.append(f"Machine: {pe.machine}")
+    machine = f"{pe.machine} ({pe.machine_name})" if pe.machine_name else pe.machine
+    lines.append(f"Machine: {machine}")
     lines.append(f"Compile Timestamp: {pe.compile_timestamp or 'N/A'}")
     lines.append(f"Digital Signature Present: {pe.has_digital_signature}")
+    lines.append(f"Likely Packed: {pe.likely_packed}")
+    lines.append("")
+    lines.extend(_render_die_lines(case.static.die_detections))
     lines.append("")
     lines.append("Sections")
     lines.append("-" * 8)
@@ -43,6 +189,9 @@ def build_text_report(case: Case) -> str:
     lines.append("-" * 7)
     for dll, functions in pe.imports.items():
         lines.append(f"  {dll} ({len(functions)} functions)")
+
+    lines.append("")
+    lines.extend(_render_summary_lines(_build_summary(case)))
 
     lines.append("")
     lines.append("Tools")
@@ -60,7 +209,14 @@ def build_text_report(case: Case) -> str:
     lines.append("-" * 12)
     if case.static.yara_matches:
         for match in case.static.yara_matches:
-            lines.append(f"  {match['rule']}")
+            tags = f" [{', '.join(match['tags'])}]" if match.get("tags") else ""
+            lines.append(f"  {match['rule']}{tags}")
+            if verbose:
+                for string_match in match.get("matches", []):
+                    lines.append(
+                        f"    {string_match['identifier']} @ {hex(string_match['offset'])}: "
+                        f"{string_match['matched_data']!r}"
+                    )
     else:
         lines.append("  none")
 
@@ -68,8 +224,30 @@ def build_text_report(case: Case) -> str:
     lines.append("Capabilities")
     lines.append("-" * 12)
     if case.static.capabilities:
-        for capability in case.static.capabilities:
-            lines.append(f"  {capability['rule']}")
+        grouped = _group_capabilities_by_tactic(case.static.capabilities)
+        for tactic in sorted(grouped, key=lambda t: (t == "Ungrouped", t)):
+            lines.append(tactic)
+            for capability in grouped[tactic]:
+                lines.append(f"  {capability['rule']}")
+                for attack in capability.get("attack") or []:
+                    lines.append(f"    ATT&CK: {_format_mapping_entry(attack)}")
+                for mbc in capability.get("mbc") or []:
+                    lines.append(f"    MBC: {_format_mapping_entry(mbc)}")
+                if verbose:
+                    for evidence in capability.get("evidence") or []:
+                        lines.append(_format_capa_evidence_line(evidence))
+    else:
+        lines.append("  none")
+
+    lines.append("")
+    lines.append("Interesting Strings")
+    lines.append("-" * 19)
+    if case.static.interesting_strings:
+        grouped = _group_strings_by_reason(case.static.interesting_strings)
+        for reason in sorted(grouped):
+            lines.append(reason)
+            for finding in grouped[reason]:
+                lines.append(f"  {finding['string']} ({finding['source']})")
     else:
         lines.append("  none")
 

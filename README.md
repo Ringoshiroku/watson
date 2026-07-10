@@ -1,9 +1,11 @@
 # watson
 
-Offline-first static (and, later, dynamic) malware triage tool. Analyzes a
-PE file and produces an IOC dossier, capability findings, and a plain text
-or JSON report, without reverse engineering or detonating the sample by
-default.
+Offline-first static (and, later, dynamic) malware triage tool for a PE
+file. Produces hashes, PE metadata (with a packed-likely flag), YARA
+matches, capa capability/ATT&CK/MBC findings, FLOSS string/IOC
+extraction, and a heuristic type/risk classification, as a plain text
+report and a JSON case file, without reverse engineering or detonating
+the sample.
 
 ## Install
 
@@ -13,37 +15,257 @@ Requires Python 3.10 or later.
 pip install -e ".[dev]"
 ```
 
-This installs the package, the `watson` console script, and the test
-dependencies (including `yara-python`, since the test suite exercises real
-YARA matching rather than skipping it).
+This installs watson itself, the `watson` console script, `pytest`, and
+`yara-python` (needed for YARA scanning).
+
+capa and FLOSS are separate CLIs, not Python dependencies, watson shells
+out to whichever of them is on `PATH`.
+
+## Quick start
+
+One-time (or whenever you want) setup:
+
+```
+watson setup
+```
+
+Walks through YARA, capa, FLOSS, and DIE, offering to fetch or install
+whatever isn't already available (a `git clone` for rule sets, a `pip
+install` for the capa/FLOSS CLIs, an official portable-build download for
+DIE on Windows), streaming the real fetch/install output as it happens,
+into caches under `~/.watson/`. Skip anything you don't want; `watson
+analyze` still works, it just reports that capability as unavailable.
+Non-interactive runs (scripts, CI, piped input) just report what's
+missing without fetching anything.
+
+Then, for each file (or a whole directory of files, analyzed recursively
+one by one):
+
+```
+watson analyze <file-or-directory>
+```
+
+Watson asks which analyses to run:
+
+```
+anything not yet installed will be skipped; run 'watson setup' first to install it
+which analyses do you want to run?
+  y  YARA rule scanning
+  c  capa capability / ATT&CK / MBC detection
+  f  FLOSS string extraction and IOC flagging
+  d  Detect It Easy packer/compiler/linker detection
+  a  all of the above
+  n  none
+type the letters you want (e.g. "yc"), or leave blank for none:
+```
+
+Picking `a` also turns on full match detail (the same detail `-v` shows)
+for that run, on the theory that asking for everything usually means you
+want to see everything; picking individual letters, or passing explicit
+flags, doesn't. If `--out` isn't given either, you're asked once whether
+to use a custom output directory instead of the `cases` default.
+
+Non-interactive runs (scripts, CI, piped input) never prompt: anything
+not explicitly supplied via a flag is just reported unavailable, same as
+today.
 
 ## Usage
 
 ```
-watson analyze <file> [--out DIR] [--rules-dir DIR] [--capa-rules-dir DIR]
+watson setup
+watson analyze <file-or-directory> [-o DIR] [-y DIR] [-c DIR] [-s DIR] [-f] [-d] [-v]
 ```
 
-- `<file>`, the PE file to analyze.
-- `--out DIR`, directory to write the case JSON to (default `cases`).
-- `--rules-dir DIR`, a directory of `.yar` YARA rule files to scan the
-  sample with. Watson does not ship a ruleset; supply your own. Omit this
-  flag to skip YARA scanning entirely (reported as unavailable, not an
-  error).
-- `--capa-rules-dir DIR`, a directory of capa's own YAML rule files, and
-  the `capa` CLI must be on `PATH` (`pip install flare-capa`). Watson does
-  not ship a capa ruleset or the FLIRT signatures capa's default backend
-  wants; without signatures, capa still runs, just without
-  library-function identification. Omit this flag to skip capa entirely.
+`watson setup` takes no flags: it checks every optional tool and offers
+to fetch/install whatever's missing, purely interactively.
 
-Each run prints a report to stdout and writes `<out>/<sha256>.json`.
+`watson analyze` never fetches or installs anything itself, only checks
+what's already there; run `watson setup` first for anything you want
+available. Every flag below has a short and a long form, so once you know
+what you want you never have to go through a prompt again:
+
+- `<file-or-directory>`, the PE file to analyze, or a directory to
+  recursively analyze every file inside. For a directory, every prompt
+  below (which analyses to run, output directory) is asked once and reused
+  for every file in the batch; each file still gets its own JSON case and
+  text report, plus one combined `<out>/<timestamp>-batch-summary.txt` for
+  the whole run. See "Batch/directory mode" below.
+- `-o DIR`, `--out DIR`, directory to write output to (default `cases`,
+  asked interactively if omitted). Always writes
+  `<out>/<timestamp>-<name>-<md5>.json` (the full case); also writes
+  `<out>/<timestamp>-<name>-<md5>_floss.json` (FLOSS's complete,
+  unfiltered string dump, easily thousands of entries) when FLOSS runs.
+  `<timestamp>` is `hh-mm-ss-DD-MM-YYYY` at the moment the run finished,
+  `<name>` is the scanned file's own name with dots swapped for dashes
+  (so `rb.exe` becomes `rb-exe`, never a `rb.exe.json`-style double
+  extension), `<md5>` is the sample's MD5. Named this way instead of by
+  hash alone so the filename itself tells you what it is. Also always
+  writes `<out>/<timestamp>-<name>-<md5>.txt`, the same readable report
+  printed to stdout, saved to disk so you don't have to open the JSON to
+  read it back later.
+- `-y DIR`, `--rules-dir DIR`, use this exact YARA rule directory instead
+  of the cache `watson setup` manages (recurses into subdirectories,
+  matches both `.yar` and `.yara`, and skips over any individual rule
+  file that fails to compile instead of losing the whole ruleset).
+  Explicit path, no prompt either way.
+- `-c DIR`, `--capa-rules-dir DIR`, same, for capa's rule set.
+- `-s DIR`, `--capa-sigs-dir DIR`, same, for capa's FLIRT signatures
+  (identifies statically-linked library functions; capa still works
+  without them, just with weaker library-function ID).
+- `-f`, `--floss`, run FLOSS and flag IOC-like matches (IP addresses,
+  URLs, Windows registry keys, Windows paths, email addresses) in the
+  report; only the flagged subset appears in the report and case JSON,
+  the full dump goes to the sidecar file above. Omit to be asked
+  interactively (or skipped, non-interactively).
+- `-d`, `--diec`, run Detect It Easy for file type, compiler, linker, and
+  packer/protector detection. Unlike YARA/capa/FLOSS, `diec` isn't
+  pip-installable; run `watson setup` first to have it fetched
+  automatically on Windows (the official portable build, no installer
+  needed, cached under `~/.watson/tools/diec/`), or to see manual install
+  instructions for other platforms (`sudo apt install detect-it-easy` on
+  Debian/Kali/Ubuntu, `choco install die` on Windows, or
+  https://github.com/horsicq/Detect-It-Easy). `watson analyze -d` itself
+  only checks whether `diec` is already available, it never fetches or
+  installs. Omit to be asked interactively.
+- `-v`, `--verbose`, show full YARA match detail (string identifier, hex
+  offset, matched bytes) and capa match evidence (the specific feature,
+  e.g. an API call, and the address it matched at) in the text report.
+  Omitted by default so the report stays skimmable, this detail is always
+  present in the case JSON regardless of this flag.
+
+Passing any of `-y`/`-c`/`-s`/`-f` skips the analysis-selection prompt
+entirely for the ones you specified and uses (or requires) exactly the
+path you gave; the rest still get asked about normally unless you supply
+those too.
+
+Each run prints a text report to stdout. The JSON case file has
+everything the text report has.
+
+### IOC flagging (`-f`/`--floss`)
+
+FLOSS extracts every string in a binary, easily thousands, so watson only
+promotes a filtered subset (IP addresses, URLs, registry keys, Windows
+paths, emails) into the report and case JSON; the complete raw dump
+always goes to the sidecar file for when you need it. The filter is
+regex-plus-validation, not a classifier, so treat it as a starting point:
+version numbers that happen to look like a dotted-quad IP (`1.0.0.0`) are
+a known, structurally-unavoidable false positive, and a handful of
+well-known X.509/ASN.1 OID arcs are explicitly excluded since they'd
+otherwise dominate the "ip" category in any binary that touches
+certificates or crypto.
+
+### Report layout
+
+Each run prints scan progress as it happens (`running YARA scan... 3s`,
+then `done: YARA scan (3.2s)`), so a long-running capa or FLOSS pass on a
+real sample doesn't look hung. Progress goes to stderr, not stdout, so
+redirecting output (`watson analyze sample.exe > report.txt`) captures
+only the report.
+
+The text report and case JSON both lead with a Summary section (counts
+and highlights: matched YARA rule names, ATT&CK tactics touched, flagged
+string reasons) ahead of the full per-tool detail. Capa capabilities are
+grouped by ATT&CK tactic instead of listed flat, so you can scan tactics
+first and drill into the rule that produced each one; capabilities with
+no ATT&CK mapping land in an `Ungrouped` bucket at the end rather than
+being dropped. Flagged strings are grouped by reason (ip, url,
+registry_key, windows_path, email) the same way.
+
+Report layout takes structural inspiration from capa's own tactic-grouped
+terminal renderer (https://github.com/mandiant/capa), PEStudio's
+indicator-first summaries (https://pestudiodownload.com/), and
+CAPE/Cuckoo's summary-before-detail sandbox reports
+(https://capev2.readthedocs.io/en/latest/usage/results.html). No text or
+code from any of them is copied, only the general shape.
+
+### Classification
+
+Every run produces a coarse classification: a type label (`ransomware`,
+`worm`, `infostealer`, `backdoor`, `downloader`, `adware`, `trojan`, or
+`unclassified`), a risk tier (`low`/`medium`/`high`), a Defender-style
+detection name (e.g. `Ransomware:Win64/CryptoImpact.capa`), and a
+plain-language reasoning list that names the exact YARA or capa rule
+that fired, plus a pointer to the Capabilities/YARA Matches sections
+below for the full evidence. It's computed entirely from the YARA/capa
+signals already collected, no extra tool, setup, or flag needed. It
+leads the text report, and it's present in the saved case JSON alongside
+every other finding.
+
+The detection name isn't a new algorithm, it's a compact label built
+from the same verdict and evidence already computed: verdict, a `Win32`/
+`Win64` platform tag derived from the PE's machine type, a short token
+for which specific signal fired (e.g. `CryptoImpact`, `LateralMovement`),
+and which tool(s) contributed (`capa`, `yara`, or `capa+yara`).
+
+This is a heuristic type category, not malware family attribution (it
+won't tell you "Emotet", only "downloader") and not a numeric risk score.
+`unclassified` means no capability evidence was collected (YARA and/or
+capa weren't run, or ran and found nothing), it's a statement about
+missing evidence, not a claim that the sample is safe.
+
+### Detect It Easy (`-d`/`--diec`)
+
+DIE gives a named signature-based read on the binary (file type,
+compiler, linker, and any detected packer/protector), complementing the
+entropy-only `Likely Packed` heuristic in PE Metadata with an actual
+name and version when one's found. It's report-only in this version,
+findings don't yet feed the Classification section's verdict or risk
+tier, that's a natural follow-up once real-world DIE output has been
+observed.
+
+### Batch/directory mode
+
+Pass a directory instead of a single file and watson recursively analyzes
+every file inside it (any depth, sorted for a deterministic order), one at
+a time. Non-PE files are skipped quietly and counted, not treated as an
+error. Any capability-selection or output-directory prompt that would
+normally show once per file is asked exactly once, up front, and the same
+answer is reused for every file in the batch, so a large batch doesn't turn
+into a wall of repeated prompts.
+
+Each file still gets the same per-file outputs as single-file mode (its own
+JSON case, text report, and FLOSS sidecar when applicable). Instead of
+printing the full text report per file, batch mode prints one short line
+per file as it runs (`sample.exe: trojan (medium risk)`, or `skipped`/
+`failed` with a reason), followed by a summary at the end, also saved to
+`<out>/<timestamp>-batch-summary.txt`:
+
+```
+Batch summary
+-------------
+scanned: 50 files
+  analyzed: 42
+  skipped (not a valid PE): 6
+  failed: 2
+
+Failed:
+  corrupt.exe: unexpected error parsing PE headers
+  locked.exe: permission denied
+```
+
+A file failing unexpectedly (a scan tool crash, a permission error) doesn't
+stop the batch, it's recorded as failed and the run continues with the
+rest. The run itself exits `0` regardless of how many files were skipped
+or failed; only a directory/file path that doesn't exist at all is a
+run-level error.
 
 ## Current scope and limitations
 
 Built so far: hashing (md5/sha1/sha256/imphash), PE metadata (sections,
-imports, timestamp, digital signature presence), YARA scanning, and capa
-capability analysis, all wired through `watson analyze`.
+imports, timestamp, digital signature presence, packed-likely heuristic),
+YARA scanning, capa capability/ATT&CK/MBC analysis, FLOSS string
+extraction with IOC-pattern flagging, a heuristic type/risk
+classification, and Detect It Easy file type/compiler/packer detection,
+all wired through `watson analyze` (including batch/directory mode), with
+`watson setup` handling
+interactive fetch/install for every optional rule set or tool.
 
-Not yet built: FLOSS and Detect It Easy orchestration, malware
-classification and risk scoring, batch/directory mode, dynamic analysis,
-and static/dynamic correlation. See the project's internal design docs for the full
-phased plan (not checked into this repo; ask if you need a copy).
+Known limitations in what's built so far:
+- Digital signature check is presence-only, not validity, signer, or
+  trust chain.
+- IOC flagging is regex-based; see "IOC flagging" above for its known
+  false-positive shape.
+
+Not yet built: dynamic analysis and static/dynamic correlation. See the
+project's internal design docs for the full phased plan (not checked into
+this repo; ask if you need a copy).

@@ -2,9 +2,21 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+# Dots are replaced so a filename like "rb.exe" can't turn into
+# "rb.exe.json" (reads like a double extension); the rest of the set is
+# the standard Windows-reserved filename characters, replaced defensively
+# since the name ultimately comes from a scanned sample's own filename.
+_UNSAFE_FILENAME_CHARS = re.compile(r'[.\\/:*?"<>|]')
+
+
+def _sanitize_filename_component(name: str) -> str:
+    return _UNSAFE_FILENAME_CHARS.sub("-", name)
 
 
 @dataclass
@@ -23,6 +35,8 @@ class PEMetadata:
     sections: list
     imports: dict
     has_digital_signature: bool
+    machine_name: str = ""
+    likely_packed: bool = False
 
 
 @dataclass
@@ -31,6 +45,9 @@ class StaticSection:
     yara_matches: list = field(default_factory=list)
     tools: dict = field(default_factory=dict)
     capabilities: list = field(default_factory=list)
+    interesting_strings: list = field(default_factory=list)
+    classification: Optional[dict] = None
+    die_detections: list = field(default_factory=list)
 
 
 @dataclass
@@ -51,14 +68,33 @@ class Case:
             yara_matches=static_data.get("yara_matches", []),
             tools=static_data.get("tools", {}),
             capabilities=static_data.get("capabilities", []),
+            interesting_strings=static_data.get("interesting_strings", []),
+            classification=static_data.get("classification"),
+            die_detections=static_data.get("die_detections", []),
         )
         return cls(identity=identity, static=static)
 
-    def save(self, directory: Path) -> Path:
+    def output_basename(self, now: Optional[datetime] = None) -> str:
+        now = now or datetime.now()
+        timestamp = now.strftime("%H-%M-%S-%d-%m-%Y")
+        safe_name = _sanitize_filename_component(self.identity.file_name)
+        return f"{timestamp}-{safe_name}-{self.identity.md5}"
+
+    def save(
+        self,
+        directory: Path,
+        now: Optional[datetime] = None,
+        data: Optional[dict] = None,
+        text_report: Optional[str] = None,
+    ) -> Path:
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
-        out_path = directory / f"{self.identity.sha256}.json"
-        out_path.write_text(json.dumps(self.to_dict(), indent=2))
+        basename = self.output_basename(now)
+        out_path = directory / f"{basename}.json"
+        payload = data if data is not None else self.to_dict()
+        out_path.write_text(json.dumps(payload, indent=2))
+        if text_report is not None:
+            (directory / f"{basename}.txt").write_text(text_report)
         return out_path
 
     @classmethod

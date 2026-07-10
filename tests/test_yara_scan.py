@@ -34,3 +34,51 @@ def test_scan_file_raises_yara_scan_error_for_malformed_rule(tmp_path, compiled_
 
     with pytest.raises(YaraScanError):
         scan_file(compiled_pe, bad_rules_dir)
+
+
+def test_scan_file_skips_one_malformed_rule_and_still_matches_the_rest(tmp_path, compiled_pe):
+    mixed_rules_dir = tmp_path / "mixed_rules"
+    mixed_rules_dir.mkdir()
+    (mixed_rules_dir / "bad.yar").write_text(
+        "rule broken { condition: this_is_not_a_real_identifier }"
+    )
+    (mixed_rules_dir / "good.yar").write_text(_FIXTURE_RULE)
+
+    matches = scan_file(compiled_pe, mixed_rules_dir)
+
+    assert len(matches) == 1
+    assert matches[0]["rule"] == "watson_test_fixture_string"
+
+
+_FIXTURE_RULE = (
+    "rule watson_test_fixture_string\n"
+    "{\n"
+    "    strings:\n"
+    '        $a = "hello from watson test fixture"\n'
+    "    condition:\n"
+    "        $a\n"
+    "}\n"
+)
+
+
+def test_scan_file_finds_rules_in_nested_subdirectories(tmp_path, compiled_pe):
+    rules_dir = tmp_path / "community_rules"
+    nested = rules_dir / "malware" / "trojans"
+    nested.mkdir(parents=True)
+    (nested / "fixture.yar").write_text(_FIXTURE_RULE)
+
+    matches = scan_file(compiled_pe, rules_dir)
+
+    assert len(matches) == 1
+    assert matches[0]["rule"] == "watson_test_fixture_string"
+
+
+def test_scan_file_finds_rules_with_yara_extension(tmp_path, compiled_pe):
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "fixture.yara").write_text(_FIXTURE_RULE)
+
+    matches = scan_file(compiled_pe, rules_dir)
+
+    assert len(matches) == 1
+    assert matches[0]["rule"] == "watson_test_fixture_string"
