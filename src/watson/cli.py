@@ -43,10 +43,10 @@ DIE_WIN32_URL = f"{DIE_RELEASE_BASE}/die_win32_portable_{DIE_VERSION}_x86.zip"
 # Same letters as the -y/-c/-f/-d short flags, so what you'd type at the prompt
 # and what you'd pass on the command line to skip it match exactly.
 CAPABILITY_OPTIONS = [
-    ("y", "YARA rule scanning (needs a rule set, fetched if missing)"),
-    ("c", "capa capability / ATT&CK / MBC detection (needs capa + a rule set)"),
+    ("y", "YARA rule scanning"),
+    ("c", "capa capability / ATT&CK / MBC detection"),
     ("f", "FLOSS string extraction and IOC flagging"),
-    ("d", "Detect It Easy packer/compiler/linker detection (needs diec installed)"),
+    ("d", "Detect It Easy packer/compiler/linker detection"),
 ]
 
 
@@ -166,6 +166,7 @@ def build_case(
 
     attempt_yara = True
     attempt_capa = True
+    forced_verbose = False
 
     # only ask once, up front, when nothing about which analyses to run was
     # already decided via flags; explicit flags (any one of them) skip this
@@ -178,11 +179,13 @@ def build_case(
         and run_die is None
         and tool_discovery.is_interactive()
     ):
+        print("anything not yet installed will be skipped; run 'watson setup' first to install it")
         selection = select_options("which analyses do you want to run?", CAPABILITY_OPTIONS)
         attempt_yara = "y" in selection.keys
         attempt_capa = "c" in selection.keys
         run_floss = "f" in selection.keys
         run_die = "d" in selection.keys
+        forced_verbose = selection.via_all_shorthand
 
     tools = {}
     yara_matches = []
@@ -280,7 +283,7 @@ def build_case(
         classification=classification,
         die_detections=die_detections,
     )
-    return Case(identity=identity, static=static), floss_raw
+    return Case(identity=identity, static=static), floss_raw, forced_verbose
 
 
 def main(argv: list | None = None) -> int:
@@ -390,18 +393,20 @@ def _run_analyze(
     out_dir = _resolve_out_dir(out_dir)
 
     try:
-        case, floss_raw = build_case(
+        case, floss_raw, forced_verbose = build_case(
             file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die
         )
     except InvalidPEError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
+    effective_verbose = verbose or forced_verbose
+
     now = datetime.now()
     if floss_raw is not None:
         save_raw_output(floss_raw, out_dir, case.output_basename(now))
 
-    text_report = build_text_report(case, verbose=verbose)
+    text_report = build_text_report(case, verbose=effective_verbose)
     case.save(out_dir, now, data=build_json_report(case), text_report=text_report)
     print(text_report)
     return 0

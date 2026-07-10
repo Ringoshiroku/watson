@@ -674,3 +674,64 @@ def test_analyze_diec_passes_resolved_path_to_scan_file(compiled_pe, tmp_path, c
     case_data = json.loads(case_files[0].read_text())
     assert case_data["static"]["tools"]["diec"]["available"] is True
     assert case_data["static"]["die_detections"] == []
+
+
+def test_analyze_all_shorthand_at_prompt_forces_verbose_output(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    out_dir = tmp_path / "cases"
+    cache_dir = tmp_path / "yara-cache"
+    cache_dir.mkdir()
+    fixture_rule = (Path(__file__).parent / "fixtures" / "rules" / "watson_test_fixture.yar").read_text()
+    (cache_dir / "fixture.yar").write_text(fixture_rule)
+    monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", cache_dir)
+    monkeypatch.setattr("watson.cli.CAPA_RULES_CACHE", tmp_path / "unused-capa-cache")
+    monkeypatch.setattr("watson.cli.CAPA_SIGS_REPO_CACHE", tmp_path / "unused-capa-sigs-cache")
+    monkeypatch.setattr("watson.cli.DIE_CACHE", tmp_path / "unused-die-cache")
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "a")
+
+    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    # -v was never passed, but picking "a" should force the same detail on
+    assert "hello from watson test fixture" in captured.out
+
+
+def test_analyze_selecting_all_capabilities_individually_does_not_force_verbose(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    out_dir = tmp_path / "cases"
+    cache_dir = tmp_path / "yara-cache"
+    cache_dir.mkdir()
+    fixture_rule = (Path(__file__).parent / "fixtures" / "rules" / "watson_test_fixture.yar").read_text()
+    (cache_dir / "fixture.yar").write_text(fixture_rule)
+    monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", cache_dir)
+    monkeypatch.setattr("watson.cli.CAPA_RULES_CACHE", tmp_path / "unused-capa-cache")
+    monkeypatch.setattr("watson.cli.CAPA_SIGS_REPO_CACHE", tmp_path / "unused-capa-sigs-cache")
+    monkeypatch.setattr("watson.cli.DIE_CACHE", tmp_path / "unused-die-cache")
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "ycfd")
+
+    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "watson_test_fixture_string" in captured.out
+    assert "hello from watson test fixture" not in captured.out
+
+
+def test_analyze_explicit_flags_never_force_verbose(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    rules_dir = Path(__file__).parent / "fixtures" / "rules"
+
+    exit_code = main(
+        ["analyze", str(compiled_pe), "-o", str(out_dir), "-y", str(rules_dir), "-f", "-d"]
+    )
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "watson_test_fixture_string" in captured.out
+    assert "hello from watson test fixture" not in captured.out
