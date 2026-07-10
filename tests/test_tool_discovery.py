@@ -212,7 +212,7 @@ def test_confirm_returns_false_when_interactive_and_declined(monkeypatch):
 _OPTIONS = [("y", "yara scanning"), ("c", "capa detection"), ("f", "floss extraction")]
 
 
-def test_select_options_returns_empty_set_when_not_interactive(monkeypatch):
+def test_select_options_returns_empty_selection_when_not_interactive(monkeypatch):
     monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: False)
 
     def fail_if_called(*args, **kwargs):
@@ -220,42 +220,70 @@ def test_select_options_returns_empty_set_when_not_interactive(monkeypatch):
 
     monkeypatch.setattr("builtins.input", fail_if_called)
 
-    assert select_options("pick some", _OPTIONS) == set()
+    result = select_options("pick some", _OPTIONS)
+
+    assert result.keys == set()
+    assert result.via_all_shorthand is False
 
 
 def test_select_options_parses_multiple_letters(monkeypatch):
     monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt="": "yc")
 
-    assert select_options("pick some", _OPTIONS) == {"y", "c"}
+    result = select_options("pick some", _OPTIONS)
+
+    assert result.keys == {"y", "c"}
+    assert result.via_all_shorthand is False
 
 
 def test_select_options_all_key_selects_everything(monkeypatch):
     monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt="": "a")
 
-    assert select_options("pick some", _OPTIONS) == {"y", "c", "f"}
+    result = select_options("pick some", _OPTIONS)
+
+    assert result.keys == {"y", "c", "f"}
+    assert result.via_all_shorthand is True
+
+
+def test_select_options_typing_every_letter_individually_is_not_all_shorthand(monkeypatch):
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "ycf")
+
+    result = select_options("pick some", _OPTIONS)
+
+    assert result.keys == {"y", "c", "f"}
+    assert result.via_all_shorthand is False
 
 
 def test_select_options_blank_answer_selects_nothing(monkeypatch):
     monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt="": "")
 
-    assert select_options("pick some", _OPTIONS) == set()
+    result = select_options("pick some", _OPTIONS)
+
+    assert result.keys == set()
+    assert result.via_all_shorthand is False
 
 
 def test_select_options_none_key_selects_nothing_even_if_mixed_in(monkeypatch):
     monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt="": "n")
 
-    assert select_options("pick some", _OPTIONS) == set()
+    result = select_options("pick some", _OPTIONS)
+
+    assert result.keys == set()
+    assert result.via_all_shorthand is False
 
 
 def test_select_options_ignores_unknown_letters(monkeypatch):
     monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt="": "yz")
 
-    assert select_options("pick some", _OPTIONS) == {"y"}
+    result = select_options("pick some", _OPTIONS)
+
+    assert result.keys == {"y"}
+    assert result.via_all_shorthand is False
 
 
 def _build_test_zip(binary_relpath: str, content: bytes = b"fake binary") -> bytes:

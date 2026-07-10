@@ -21,6 +21,12 @@ class ToolStatus:
     reason: Optional[str]
 
 
+@dataclass
+class Selection:
+    keys: set
+    via_all_shorthand: bool
+
+
 def is_interactive() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
@@ -32,9 +38,9 @@ def confirm(prompt: str) -> bool:
     return answer.strip().lower() == "y"
 
 
-def select_options(prompt: str, options: list, all_key: str = "a", none_key: str = "n") -> set:
+def select_options(prompt: str, options: list, all_key: str = "a", none_key: str = "n") -> Selection:
     if not is_interactive():
-        return set()
+        return Selection(keys=set(), via_all_shorthand=False)
     print(prompt)
     for key, description in options:
         print(f"  {key}  {description}")
@@ -44,10 +50,10 @@ def select_options(prompt: str, options: list, all_key: str = "a", none_key: str
     answer = input(f'type the letters you want (e.g. "{example}"), or leave blank for none: ')
     answer = answer.strip().lower()
     if all_key in answer:
-        return {key for key, _ in options}
+        return Selection(keys={key for key, _ in options}, via_all_shorthand=True)
     if not answer or none_key in answer:
-        return set()
-    return {key for key, _ in options if key in answer}
+        return Selection(keys=set(), via_all_shorthand=False)
+    return Selection(keys={key for key, _ in options if key in answer}, via_all_shorthand=False)
 
 
 def _offer_pip_install(name: str, pip_package: str) -> bool:
