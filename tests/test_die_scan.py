@@ -70,3 +70,12 @@ def test_reshape_detects_handles_missing_keys_gracefully():
     assert die_scan._reshape_detects(data) == [
         {"filetype": None, "values": [{"type": None, "name": None, "version": None, "string": None}]}
     ]
+
+
+def test_scan_file_raises_die_scan_error_for_unusable_binary_path(tmp_path):
+    fake_file = tmp_path / "sample.bin"
+    fake_file.write_bytes(b"not a real PE")
+    missing_binary = tmp_path / "does-not-exist-diec"
+
+    with pytest.raises(DieScanError):
+        scan_file(fake_file, diec_binary=str(missing_binary))

@@ -20,6 +20,8 @@ def scan_file(file_path: Path, diec_binary: str = "diec", timeout: int = 60) -> 
         )
     except subprocess.TimeoutExpired as exc:
         raise DieScanError(f"diec timed out after {timeout}s") from exc
+    except OSError as exc:
+        raise DieScanError(f"failed to run diec: {exc}") from exc
 
     if result.returncode != 0:
         raise DieScanError(result.stderr.strip() or f"diec exited with code {result.returncode}")
