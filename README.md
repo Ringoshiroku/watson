@@ -38,10 +38,11 @@ analyze` still works, it just reports that capability as unavailable.
 Non-interactive runs (scripts, CI, piped input) just report what's
 missing without fetching anything.
 
-Then, for each file:
+Then, for each file (or a whole directory of files, analyzed recursively
+one by one):
 
 ```
-watson analyze <file>
+watson analyze <file-or-directory>
 ```
 
 Watson asks which analyses to run:
@@ -72,7 +73,7 @@ today.
 
 ```
 watson setup
-watson analyze <file> [-o DIR] [-y DIR] [-c DIR] [-s DIR] [-f] [-d] [-v]
+watson analyze <file-or-directory> [-o DIR] [-y DIR] [-c DIR] [-s DIR] [-f] [-d] [-v]
 ```
 
 `watson setup` takes no flags: it checks every optional tool and offers
@@ -83,7 +84,12 @@ what's already there; run `watson setup` first for anything you want
 available. Every flag below has a short and a long form, so once you know
 what you want you never have to go through a prompt again:
 
-- `<file>`, the PE file to analyze.
+- `<file-or-directory>`, the PE file to analyze, or a directory to
+  recursively analyze every file inside. For a directory, every prompt
+  below (which analyses to run, output directory) is asked once and reused
+  for every file in the batch; each file still gets its own JSON case and
+  text report, plus one combined `<out>/<timestamp>-batch-summary.txt` for
+  the whole run. See "Batch/directory mode" below.
 - `-o DIR`, `--out DIR`, directory to write output to (default `cases`,
   asked interactively if omitted). Always writes
   `<out>/<timestamp>-<name>-<md5>.json` (the full case); also writes
@@ -207,6 +213,42 @@ findings don't yet feed the Classification section's verdict or risk
 tier, that's a natural follow-up once real-world DIE output has been
 observed.
 
+### Batch/directory mode
+
+Pass a directory instead of a single file and watson recursively analyzes
+every file inside it (any depth, sorted for a deterministic order), one at
+a time. Non-PE files are skipped quietly and counted, not treated as an
+error. Any capability-selection or output-directory prompt that would
+normally show once per file is asked exactly once, up front, and the same
+answer is reused for every file in the batch, so a large batch doesn't turn
+into a wall of repeated prompts.
+
+Each file still gets the same per-file outputs as single-file mode (its own
+JSON case, text report, and FLOSS sidecar when applicable). Instead of
+printing the full text report per file, batch mode prints one short line
+per file as it runs (`sample.exe: trojan (medium risk)`, or `skipped`/
+`failed` with a reason), followed by a summary at the end, also saved to
+`<out>/<timestamp>-batch-summary.txt`:
+
+```
+Batch summary
+-------------
+scanned: 50 files
+  analyzed: 42
+  skipped (not a valid PE): 6
+  failed: 2
+
+Failed:
+  corrupt.exe: yara scan failed: ...
+  locked.exe: permission denied
+```
+
+A file failing unexpectedly (a scan tool crash, a permission error) doesn't
+stop the batch, it's recorded as failed and the run continues with the
+rest. The run itself exits `0` regardless of how many files were skipped
+or failed; only a directory/file path that doesn't exist at all is a
+run-level error.
+
 ## Current scope and limitations
 
 Built so far: hashing (md5/sha1/sha256/imphash), PE metadata (sections,
@@ -214,7 +256,8 @@ imports, timestamp, digital signature presence, packed-likely heuristic),
 YARA scanning, capa capability/ATT&CK/MBC analysis, FLOSS string
 extraction with IOC-pattern flagging, a heuristic type/risk
 classification, and Detect It Easy file type/compiler/packer detection,
-all wired through `watson analyze`, with `watson setup` handling
+all wired through `watson analyze` (including batch/directory mode), with
+`watson setup` handling
 interactive fetch/install for every optional rule set or tool.
 
 Known limitations in what's built so far:
@@ -223,7 +266,6 @@ Known limitations in what's built so far:
 - IOC flagging is regex-based; see "IOC flagging" above for its known
   false-positive shape.
 
-Not yet built: batch/directory mode, dynamic analysis, and
-static/dynamic correlation. See the project's internal design docs for
-the full phased plan (not checked into this repo; ask if you need a
-copy).
+Not yet built: dynamic analysis and static/dynamic correlation. See the
+project's internal design docs for the full phased plan (not checked into
+this repo; ask if you need a copy).
