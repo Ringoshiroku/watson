@@ -99,10 +99,14 @@ you never have to go through a prompt again:
   interactively (or skipped, non-interactively).
 - `-d`, `--diec`, run Detect It Easy for file type, compiler, linker, and
   packer/protector detection. Unlike YARA/capa/FLOSS, `diec` isn't
-  pip-installable, install it with your OS package manager (`sudo apt
-  install detect-it-easy` on Debian/Kali/Ubuntu, `choco install die` on
-  Windows) or from https://github.com/horsicq/Detect-It-Easy. Omit to be
-  asked interactively.
+  pip-installable. On Windows, if it isn't found, watson offers to
+  download the official portable build itself (no installer needed,
+  cached under `~/.watson/tools/diec/`). On Linux and other platforms,
+  install it with your OS package manager (`sudo apt install
+  detect-it-easy` on Debian/Kali/Ubuntu) or from
+  https://github.com/horsicq/Detect-It-Easy; `choco install die` also
+  works on Windows if you'd rather install it system-wide instead. Omit
+  to be asked interactively.
 - `-v`, `--verbose`, show full YARA match detail (string identifier, hex
   offset, matched bytes) and capa match evidence (the specific feature,
   e.g. an API call, and the address it matched at) in the text report.
