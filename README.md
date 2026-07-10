@@ -23,38 +23,46 @@ out to whichever of them is on `PATH`.
 
 ## Quick start
 
+One-time (or whenever you want) setup:
+
+```
+watson setup
+```
+
+Walks through YARA, capa, FLOSS, and DIE, offering to fetch or install
+whatever isn't already available (a `git clone` for rule sets, a `pip
+install` for the capa/FLOSS CLIs, an official portable-build download for
+DIE on Windows), streaming the real fetch/install output as it happens,
+into caches under `~/.watson/`. Skip anything you don't want; `watson
+analyze` still works, it just reports that capability as unavailable.
+Non-interactive runs (scripts, CI, piped input) just report what's
+missing without fetching anything.
+
+Then, for each file:
+
 ```
 watson analyze <file>
 ```
 
-That's it, no setup required first. Watson asks which analyses to run:
+Watson asks which analyses to run:
 
 ```
+anything not yet installed will be skipped; run 'watson setup' first to install it
 which analyses do you want to run?
-  y  YARA rule scanning (needs a rule set, fetched if missing)
-  c  capa capability / ATT&CK / MBC detection (needs capa + a rule set)
+  y  YARA rule scanning
+  c  capa capability / ATT&CK / MBC detection
   f  FLOSS string extraction and IOC flagging
-  d  Detect It Easy packer/compiler/linker detection (needs diec installed)
+  d  Detect It Easy packer/compiler/linker detection
   a  all of the above
   n  none
 type the letters you want (e.g. "yc"), or leave blank for none:
 ```
 
-Pick what you want, and if the underlying rule set isn't on disk yet, it
-asks again, per capability, whether to fetch it:
-
-```
-YARA rules not found locally. fetch it now with 'git clone https://github.com/Yara-Rules/rules'? [y/N]
-```
-
-Say yes and watson fetches it (a `git clone` for rule sets, a `pip
-install` for the capa/FLOSS CLIs), streaming the real fetch/install
-output as it happens, into a cache under `~/.watson/rules/` and
-continues. Say no and watson tells you what you'll be missing for this
-run and keeps going with everything else. Once fetched, later runs reuse
-the cache silently, no repeat prompts. If `--out` isn't given either,
-you're asked once whether to use a custom output directory instead of
-the `cases` default.
+Picking `a` also turns on full match detail (the same detail `-v` shows)
+for that run, on the theory that asking for everything usually means you
+want to see everything; picking individual letters, or passing explicit
+flags, doesn't. If `--out` isn't given either, you're asked once whether
+to use a custom output directory instead of the `cases` default.
 
 Non-interactive runs (scripts, CI, piped input) never prompt: anything
 not explicitly supplied via a flag is just reported unavailable, same as
@@ -63,11 +71,17 @@ today.
 ## Usage
 
 ```
+watson setup
 watson analyze <file> [-o DIR] [-y DIR] [-c DIR] [-s DIR] [-f] [-d] [-v]
 ```
 
-Every flag has a short and a long form, so once you know what you want
-you never have to go through a prompt again:
+`watson setup` takes no flags: it checks every optional tool and offers
+to fetch/install whatever's missing, purely interactively.
+
+`watson analyze` never fetches or installs anything itself, only checks
+what's already there; run `watson setup` first for anything you want
+available. Every flag below has a short and a long form, so once you know
+what you want you never have to go through a prompt again:
 
 - `<file>`, the PE file to analyze.
 - `-o DIR`, `--out DIR`, directory to write output to (default `cases`,
@@ -84,7 +98,7 @@ you never have to go through a prompt again:
   printed to stdout, saved to disk so you don't have to open the JSON to
   read it back later.
 - `-y DIR`, `--rules-dir DIR`, use this exact YARA rule directory instead
-  of the interactive fetch/cache flow (recurses into subdirectories,
+  of the cache `watson setup` manages (recurses into subdirectories,
   matches both `.yar` and `.yara`, and skips over any individual rule
   file that fails to compile instead of losing the whole ruleset).
   Explicit path, no prompt either way.
@@ -99,14 +113,14 @@ you never have to go through a prompt again:
   interactively (or skipped, non-interactively).
 - `-d`, `--diec`, run Detect It Easy for file type, compiler, linker, and
   packer/protector detection. Unlike YARA/capa/FLOSS, `diec` isn't
-  pip-installable. On Windows, if it isn't found, watson offers to
-  download the official portable build itself (no installer needed,
-  cached under `~/.watson/tools/diec/`). On Linux and other platforms,
-  install it with your OS package manager (`sudo apt install
-  detect-it-easy` on Debian/Kali/Ubuntu) or from
-  https://github.com/horsicq/Detect-It-Easy; `choco install die` also
-  works on Windows if you'd rather install it system-wide instead. Omit
-  to be asked interactively.
+  pip-installable; run `watson setup` first to have it fetched
+  automatically on Windows (the official portable build, no installer
+  needed, cached under `~/.watson/tools/diec/`), or to see manual install
+  instructions for other platforms (`sudo apt install detect-it-easy` on
+  Debian/Kali/Ubuntu, `choco install die` on Windows, or
+  https://github.com/horsicq/Detect-It-Easy). `watson analyze -d` itself
+  only checks whether `diec` is already available, it never fetches or
+  installs. Omit to be asked interactively.
 - `-v`, `--verbose`, show full YARA match detail (string identifier, hex
   offset, matched bytes) and capa match evidence (the specific feature,
   e.g. an API call, and the address it matched at) in the text report.
@@ -200,8 +214,8 @@ imports, timestamp, digital signature presence, packed-likely heuristic),
 YARA scanning, capa capability/ATT&CK/MBC analysis, FLOSS string
 extraction with IOC-pattern flagging, a heuristic type/risk
 classification, and Detect It Easy file type/compiler/packer detection,
-all wired through `watson analyze`, with interactive setup for every
-optional rule set or tool.
+all wired through `watson analyze`, with `watson setup` handling
+interactive fetch/install for every optional rule set or tool.
 
 Known limitations in what's built so far:
 - Digital signature check is presence-only, not validity, signer, or
