@@ -342,8 +342,9 @@ def _run_analyze(
     if floss_raw is not None:
         save_raw_output(floss_raw, out_dir, case.output_basename(now))
 
-    case.save(out_dir, now, data=build_json_report(case))
-    print(build_text_report(case, verbose=verbose))
+    text_report = build_text_report(case, verbose=verbose)
+    case.save(out_dir, now, data=build_json_report(case), text_report=text_report)
+    print(text_report)
     return 0
 
 

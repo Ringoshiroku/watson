@@ -64,6 +64,32 @@ def test_case_save_sanitizes_dots_so_it_never_looks_like_a_double_extension(tmp_
     assert out_path.name.count(".") == 1
 
 
+def test_case_save_writes_text_report_when_provided(tmp_path):
+    from datetime import datetime
+
+    case = _sample_case()
+
+    out_path = case.save(
+        tmp_path, now=datetime(2026, 7, 9, 14, 23, 5), text_report="hello report text"
+    )
+
+    txt_path = tmp_path / f"14-23-05-09-07-2026-sample-exe-{'c' * 32}.txt"
+    assert txt_path.exists()
+    assert txt_path.read_text() == "hello report text"
+    assert out_path == tmp_path / f"14-23-05-09-07-2026-sample-exe-{'c' * 32}.json"
+
+
+def test_case_save_does_not_write_text_report_when_omitted(tmp_path):
+    from datetime import datetime
+
+    case = _sample_case()
+
+    case.save(tmp_path, now=datetime(2026, 7, 9, 14, 23, 5))
+
+    txt_path = tmp_path / f"14-23-05-09-07-2026-sample-exe-{'c' * 32}.txt"
+    assert not txt_path.exists()
+
+
 def test_case_save_defaults_to_current_time_when_not_given(tmp_path):
     case = _sample_case()
 

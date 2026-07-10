@@ -80,12 +80,21 @@ class Case:
         safe_name = _sanitize_filename_component(self.identity.file_name)
         return f"{timestamp}-{safe_name}-{self.identity.md5}"
 
-    def save(self, directory: Path, now: Optional[datetime] = None, data: Optional[dict] = None) -> Path:
+    def save(
+        self,
+        directory: Path,
+        now: Optional[datetime] = None,
+        data: Optional[dict] = None,
+        text_report: Optional[str] = None,
+    ) -> Path:
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
-        out_path = directory / f"{self.output_basename(now)}.json"
+        basename = self.output_basename(now)
+        out_path = directory / f"{basename}.json"
         payload = data if data is not None else self.to_dict()
         out_path.write_text(json.dumps(payload, indent=2))
+        if text_report is not None:
+            (directory / f"{basename}.txt").write_text(text_report)
         return out_path
 
     @classmethod
