@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from watson.cli import build_case, main
+import watson.cli
 
 
 def _isolate_rule_caches(monkeypatch, tmp_path):
@@ -822,3 +823,173 @@ def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_and_die_o
 
     assert case.static.tools["floss"]["reason"] == "floss not requested (use --floss)"
     assert case.static.tools["diec"]["reason"] == "diec not requested (use --diec)"
+
+
+def test_analyze_directory_recursively_finds_and_analyzes_files(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    samples_dir = tmp_path / "samples"
+    (samples_dir / "nested").mkdir(parents=True)
+    shutil.copy(compiled_pe, samples_dir / "one.exe")
+    shutil.copy(compiled_pe, samples_dir / "nested" / "two.exe")
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(samples_dir), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "one.exe:" in captured.err
+    assert "two.exe:" in captured.err
+    assert "Batch summary" in captured.out
+    assert "analyzed: 2" in captured.out
+
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith("_floss.json")]
+    assert len(case_files) == 2
+
+
+def test_analyze_directory_asks_analysis_selection_once_for_whole_batch(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    samples_dir = tmp_path / "samples"
+    samples_dir.mkdir()
+    shutil.copy(compiled_pe, samples_dir / "one.exe")
+    shutil.copy(compiled_pe, samples_dir / "two.exe")
+    shutil.copy(compiled_pe, samples_dir / "three.exe")
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+
+    call_count = {"n": 0}
+
+    def counting_input(prompt=""):
+        call_count["n"] += 1
+        return "n"
+
+    monkeypatch.setattr("builtins.input", counting_input)
+
+    exit_code = main(["analyze", str(samples_dir), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    assert call_count["n"] == 1
+    captured = capsys.readouterr()
+    assert captured.out.count("which analyses do you want to run?") == 1
+
+
+def test_analyze_directory_asks_floss_and_die_confirmation_once_each(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    samples_dir = tmp_path / "samples"
+    samples_dir.mkdir()
+    shutil.copy(compiled_pe, samples_dir / "one.exe")
+    shutil.copy(compiled_pe, samples_dir / "two.exe")
+    empty_rules_dir = tmp_path / "empty_rules"
+    empty_rules_dir.mkdir()
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+
+    call_count = {"n": 0}
+
+    def counting_input(prompt=""):
+        call_count["n"] += 1
+        return "n"
+
+    monkeypatch.setattr("builtins.input", counting_input)
+
+    exit_code = main(
+        ["analyze", str(samples_dir), "--out", str(out_dir), "--rules-dir", str(empty_rules_dir)]
+    )
+
+    assert exit_code == 0
+    assert call_count["n"] == 2
+
+
+def test_analyze_directory_skips_non_pe_files_and_continues(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    samples_dir = tmp_path / "samples"
+    samples_dir.mkdir()
+    shutil.copy(compiled_pe, samples_dir / "one.exe")
+    (samples_dir / "readme.txt").write_bytes(b"not a pe file at all")
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(samples_dir), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "readme.txt: skipped (not a valid PE)" in captured.err
+    assert "one.exe:" in captured.err
+    assert "skipped (not a valid PE): 1" in captured.out
+    assert "analyzed: 1" in captured.out
+
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith("_floss.json")]
+    assert len(case_files) == 1
+
+
+def test_analyze_directory_records_unexpected_failure_and_continues(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    samples_dir = tmp_path / "samples"
+    samples_dir.mkdir()
+    shutil.copy(compiled_pe, samples_dir / "broken.exe")
+    shutil.copy(compiled_pe, samples_dir / "ok.exe")
+    out_dir = tmp_path / "cases"
+
+    real_extract_pe_metadata = watson.cli.extract_pe_metadata
+
+    def flaky_extract(file_path):
+        if file_path.name == "broken.exe":
+            raise RuntimeError("simulated tool crash")
+        return real_extract_pe_metadata(file_path)
+
+    monkeypatch.setattr("watson.cli.extract_pe_metadata", flaky_extract)
+
+    exit_code = main(["analyze", str(samples_dir), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "broken.exe: failed (simulated tool crash)" in captured.err
+    assert "ok.exe:" in captured.err
+    assert "failed: 1" in captured.out
+    assert "analyzed: 1" in captured.out
+
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith("_floss.json")]
+    assert len(case_files) == 1
+
+
+def test_analyze_directory_writes_batch_summary_file(compiled_pe, tmp_path, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    samples_dir = tmp_path / "samples"
+    samples_dir.mkdir()
+    shutil.copy(compiled_pe, samples_dir / "one.exe")
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(samples_dir), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    summary_files = list(out_dir.glob("*-batch-summary.txt"))
+    assert len(summary_files) == 1
+    content = summary_files[0].read_text()
+    assert "Batch summary" in content
+    assert "analyzed: 1" in content
+
+
+def test_analyze_empty_directory_reports_zero_files(tmp_path, capsys):
+    samples_dir = tmp_path / "samples"
+    samples_dir.mkdir()
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(samples_dir), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "scanned: 0 files" in captured.out
+
+
+def test_analyze_rejects_missing_path_as_neither_file_nor_directory(tmp_path, capsys):
+    missing = tmp_path / "does_not_exist"
+
+    exit_code = main(["analyze", str(missing)])
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "is not a file or directory" in captured.err

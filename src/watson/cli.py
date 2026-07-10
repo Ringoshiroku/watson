@@ -311,7 +311,11 @@ def main(argv: list | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     analyze_parser = subparsers.add_parser("analyze", help="Analyze a single PE file")
-    analyze_parser.add_argument("file", type=Path, help="Path to the PE file to analyze")
+    analyze_parser.add_argument(
+        "file",
+        type=Path,
+        help="Path to a PE file, or a directory to recursively analyze every file inside",
+    )
     analyze_parser.add_argument(
         "-o",
         "--out",
@@ -436,8 +440,13 @@ def _run_analyze(
     run_die: bool | None,
     verbose: bool,
 ) -> int:
+    if file_path.is_dir():
+        return _run_batch(
+            file_path, out_dir, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die, verbose
+        )
+
     if not file_path.is_file():
-        print(f"error: {file_path} is not a file", file=sys.stderr)
+        print(f"error: {file_path} is not a file or directory", file=sys.stderr)
         return 1
 
     out_dir = _resolve_out_dir(out_dir)
@@ -459,6 +468,89 @@ def _run_analyze(
     text_report = build_text_report(case, verbose=effective_verbose)
     case.save(out_dir, now, data=build_json_report(case), text_report=text_report)
     print(text_report)
+    return 0
+
+
+def _build_batch_summary(total: int, analyzed: int, skipped: int, failed: list) -> str:
+    lines = [
+        "Batch summary",
+        "-------------",
+        f"scanned: {total} files",
+        f"  analyzed: {analyzed}",
+        f"  skipped (not a valid PE): {skipped}",
+        f"  failed: {len(failed)}",
+    ]
+    if failed:
+        lines.append("")
+        lines.append("Failed:")
+        for name, reason in failed:
+            lines.append(f"  {name}: {reason}")
+    return "\n".join(lines)
+
+
+def _run_batch(
+    dir_path: Path,
+    out_dir: Path | None,
+    rules_dir: Path | None,
+    capa_rules_dir: Path | None,
+    capa_sigs_dir: Path | None,
+    run_floss: bool | None,
+    run_die: bool | None,
+    verbose: bool,
+) -> int:
+    out_dir = _resolve_out_dir(out_dir)
+    files = sorted(path for path in dir_path.rglob("*") if path.is_file())
+
+    attempt_yara, attempt_capa, run_floss, run_die, forced_verbose = _resolve_capability_selection(
+        rules_dir, capa_rules_dir, run_floss, run_die, None, None, "this batch"
+    )
+    effective_verbose = verbose or forced_verbose
+
+    total = len(files)
+    analyzed = 0
+    skipped = 0
+    failed = []
+
+    for index, file_path in enumerate(files, start=1):
+        try:
+            case, floss_raw, _ = build_case(
+                file_path,
+                rules_dir,
+                capa_rules_dir,
+                capa_sigs_dir,
+                run_floss,
+                run_die,
+                attempt_yara,
+                attempt_capa,
+            )
+        except InvalidPEError:
+            skipped += 1
+            print(f"[{index}/{total}] {file_path.name}: skipped (not a valid PE)", file=sys.stderr)
+            continue
+        except Exception as exc:
+            # a single file's tool crash or read failure shouldn't take the
+            # whole batch down; record it and keep going
+            failed.append((file_path.name, str(exc)))
+            print(f"[{index}/{total}] {file_path.name}: failed ({exc})", file=sys.stderr)
+            continue
+
+        now = datetime.now()
+        if floss_raw is not None:
+            save_raw_output(floss_raw, out_dir, case.output_basename(now))
+
+        text_report = build_text_report(case, verbose=effective_verbose)
+        case.save(out_dir, now, data=build_json_report(case), text_report=text_report)
+
+        analyzed += 1
+        verdict = case.static.classification["verdict"]
+        risk = case.static.classification["risk"]
+        print(f"[{index}/{total}] {file_path.name}: {verdict} ({risk} risk)", file=sys.stderr)
+
+    summary = _build_batch_summary(total, analyzed, skipped, failed)
+    print(summary)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    summary_timestamp = datetime.now().strftime("%H-%M-%S-%d-%m-%Y")
+    (out_dir / f"{summary_timestamp}-batch-summary.txt").write_text(summary + "\n")
     return 0
 
 
