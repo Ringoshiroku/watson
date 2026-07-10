@@ -4,6 +4,10 @@ import importlib.util
 import shutil
 import subprocess
 import sys
+import tempfile
+import urllib.error
+import urllib.request
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -126,6 +130,54 @@ def find_or_fetch_dir(
 
     reason = f"{name} not found locally"
     reason += f"; fetch with 'git clone {fetch_url} {cache_dir}'" if fetch_url else "; provide a path manually"
+    return ToolStatus(name=name, available=False, path=None, reason=reason)
+
+
+def _offer_zip_download(name: str, archive_url: str, cache_dir: Path, binary_relpath: str) -> bool:
+    answer = input(
+        f"{name} not found locally. download the official portable build now from {archive_url}? [y/N] "
+    )
+    if answer.strip().lower() != "y":
+        return False
+
+    tmp_path: Optional[Path] = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+            with urllib.request.urlopen(archive_url, timeout=60) as response:
+                shutil.copyfileobj(response, tmp)
+        cache_dir = Path(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(tmp_path) as archive:
+            archive.extractall(cache_dir)
+    except (OSError, zipfile.BadZipFile, urllib.error.URLError) as exc:
+        print(f"download/extract failed: {exc}")
+        return False
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+
+    return (Path(cache_dir) / binary_relpath).is_file()
+
+
+def find_or_fetch_zip_binary(
+    name: str,
+    binary_relpath: str,
+    cache_dir: Path,
+    archive_url: Optional[str],
+    offline: bool = False,
+) -> ToolStatus:
+    cache_dir = Path(cache_dir)
+    cached_binary = cache_dir / binary_relpath
+    if cached_binary.is_file():
+        return ToolStatus(name=name, available=True, path=str(cached_binary), reason=None)
+
+    if archive_url and not offline and is_interactive():
+        if _offer_zip_download(name, archive_url, cache_dir, binary_relpath):
+            return ToolStatus(name=name, available=True, path=str(cached_binary), reason=None)
+
+    reason = f"{name} not found locally"
+    reason += f"; fetch the portable build from {archive_url}" if archive_url else "; install it manually"
     return ToolStatus(name=name, available=False, path=None, reason=reason)
 
 

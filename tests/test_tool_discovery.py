@@ -1,6 +1,16 @@
+import contextlib
+import io
 import subprocess
+import zipfile
 
-from watson.tool_discovery import confirm, find_binary, find_module, find_or_fetch_dir, select_options
+from watson.tool_discovery import (
+    confirm,
+    find_binary,
+    find_module,
+    find_or_fetch_dir,
+    find_or_fetch_zip_binary,
+    select_options,
+)
 
 
 def test_find_binary_reports_available_when_on_path():
@@ -246,3 +256,99 @@ def test_select_options_ignores_unknown_letters(monkeypatch):
     monkeypatch.setattr("builtins.input", lambda prompt="": "yz")
 
     assert select_options("pick some", _OPTIONS) == {"y"}
+
+
+def _build_test_zip(binary_relpath: str, content: bytes = b"fake binary") -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(binary_relpath, content)
+    return buffer.getvalue()
+
+
+def test_find_or_fetch_zip_binary_uses_populated_cache_without_prompting(tmp_path, monkeypatch):
+    cache_dir = tmp_path / "cache"
+    (cache_dir / "tool").mkdir(parents=True)
+    (cache_dir / "tool" / "bin.exe").write_text("already here")
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("should not fetch when cache already has the binary")
+
+    monkeypatch.setattr("watson.tool_discovery.urllib.request.urlopen", fail_if_called)
+
+    status = find_or_fetch_zip_binary(
+        "diec", "tool/bin.exe", cache_dir=cache_dir, archive_url="https://example.invalid/tool.zip"
+    )
+
+    assert status.available is True
+    assert status.path == str(cache_dir / "tool" / "bin.exe")
+
+
+def test_find_or_fetch_zip_binary_reports_unavailable_when_missing_and_not_interactive(tmp_path):
+    status = find_or_fetch_zip_binary(
+        "diec", "tool/bin.exe", cache_dir=tmp_path / "cache", archive_url="https://example.invalid/tool.zip"
+    )
+
+    assert status.available is False
+    assert "not found locally" in status.reason
+
+
+def test_find_or_fetch_zip_binary_reports_manual_hint_when_no_archive_url(tmp_path):
+    status = find_or_fetch_zip_binary("diec", "tool/bin.exe", cache_dir=tmp_path / "cache", archive_url=None)
+
+    assert status.available is False
+    assert "install it manually" in status.reason
+
+
+def test_find_or_fetch_zip_binary_downloads_and_extracts_when_confirmed(tmp_path, monkeypatch):
+    zip_bytes = _build_test_zip("tool/bin.exe", b"fake binary contents")
+    cache_dir = tmp_path / "cache"
+
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+    monkeypatch.setattr(
+        "watson.tool_discovery.urllib.request.urlopen",
+        lambda url, timeout=60: contextlib.closing(io.BytesIO(zip_bytes)),
+    )
+
+    status = find_or_fetch_zip_binary(
+        "diec", "tool/bin.exe", cache_dir=cache_dir, archive_url="https://example.invalid/tool.zip"
+    )
+
+    assert status.available is True
+    assert status.path == str(cache_dir / "tool" / "bin.exe")
+    assert (cache_dir / "tool" / "bin.exe").read_bytes() == b"fake binary contents"
+
+
+def test_find_or_fetch_zip_binary_declines_when_user_says_no(tmp_path, monkeypatch):
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "n")
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("should not download when declined")
+
+    monkeypatch.setattr("watson.tool_discovery.urllib.request.urlopen", fail_if_called)
+
+    status = find_or_fetch_zip_binary(
+        "diec", "tool/bin.exe", cache_dir=cache_dir, archive_url="https://example.invalid/tool.zip"
+    )
+
+    assert status.available is False
+    assert not cache_dir.exists()
+
+
+def test_find_or_fetch_zip_binary_handles_corrupt_zip_gracefully(tmp_path, monkeypatch):
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+    monkeypatch.setattr(
+        "watson.tool_discovery.urllib.request.urlopen",
+        lambda url, timeout=60: contextlib.closing(io.BytesIO(b"not a real zip file")),
+    )
+
+    status = find_or_fetch_zip_binary(
+        "diec", "tool/bin.exe", cache_dir=cache_dir, archive_url="https://example.invalid/tool.zip"
+    )
+
+    assert status.available is False
+    assert status.reason is not None
