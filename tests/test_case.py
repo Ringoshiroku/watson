@@ -502,3 +502,70 @@ def test_case_load_tolerates_json_missing_die_detections_field(tmp_path):
     loaded = Case.load(case_path)
 
     assert loaded.static.die_detections == []
+
+
+def test_static_section_defaults_ranked_strings_when_omitted():
+    pe_metadata = PEMetadata(
+        machine="0x8664",
+        compile_timestamp=None,
+        sections=[],
+        imports={},
+        has_digital_signature=False,
+    )
+
+    static = StaticSection(pe_metadata=pe_metadata)
+
+    assert static.ranked_strings == []
+
+
+def test_case_round_trips_ranked_strings():
+    identity = Identity(sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe")
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        ranked_strings=[
+            {"string": "cmd.exe /c whoami", "source": "decoded_strings", "score": 95.5},
+        ],
+    )
+    case = Case(identity=identity, static=static)
+
+    restored = Case.from_dict(case.to_dict())
+
+    assert restored.static.ranked_strings == [
+        {"string": "cmd.exe /c whoami", "source": "decoded_strings", "score": 95.5},
+    ]
+
+
+def test_case_load_tolerates_json_missing_ranked_strings_field(tmp_path):
+    data_without_ranked_strings = {
+        "identity": {
+            "sha256": "a" * 64,
+            "sha1": "b" * 40,
+            "md5": "c" * 32,
+            "imphash": None,
+            "file_name": "sample.exe",
+        },
+        "static": {
+            "pe_metadata": {
+                "machine": "0x8664",
+                "compile_timestamp": None,
+                "sections": [],
+                "imports": {},
+                "has_digital_signature": False,
+            },
+            "yara_matches": [],
+            "tools": {},
+            "capabilities": [],
+            "interesting_strings": [],
+            "classification": None,
+            "die_detections": [],
+        },
+    }
+    case_path = tmp_path / (("a" * 64) + ".json")
+    case_path.write_text(json.dumps(data_without_ranked_strings))
+
+    loaded = Case.load(case_path)
+
+    assert loaded.static.ranked_strings == []
