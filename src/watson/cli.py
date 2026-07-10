@@ -210,7 +210,9 @@ def build_case(
             "reason": "diec not requested (use --diec)",
         }
 
-    classification = classify(yara_matches, capabilities, pe_metadata.likely_packed, tools)
+    classification = classify(
+        yara_matches, capabilities, pe_metadata.likely_packed, tools, pe_metadata.machine
+    )
 
     static = StaticSection(
         pe_metadata=pe_metadata,

@@ -14,6 +14,9 @@ def _render_classification_lines(classification: dict | None) -> list:
     if classification is None:
         lines.append("  not computed")
         return lines
+    detection = classification.get("detection")
+    if detection:
+        lines.append(f"Detection: {detection}")
     lines.append(f"Verdict: {classification['verdict']}")
     lines.append(f"Risk: {classification['risk']}")
     lines.append("Reasoning:")

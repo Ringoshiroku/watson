@@ -518,6 +518,38 @@ def test_build_text_report_shows_classification_section():
     )
 
 
+def test_build_text_report_shows_detection_line_when_present():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        classification={
+            "verdict": "ransomware",
+            "risk": "high",
+            "reasoning": ["some reason"],
+            "detection": "Ransomware:Win64/CryptoImpact.capa",
+        },
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "Detection: Ransomware:Win64/CryptoImpact.capa" in report
+    assert report.index("Detection:") < report.index("Verdict:")
+
+
+def test_build_text_report_omits_detection_line_when_absent():
+    case = _sample_case_with_classification()
+
+    report = build_text_report(case)
+
+    assert "Detection:" not in report
+
+
 def test_classification_section_appears_before_sample_section():
     case = _sample_case_with_classification()
 

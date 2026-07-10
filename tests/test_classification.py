@@ -181,8 +181,9 @@ def test_classify_detects_ransomware_via_mixed_attack_tactic_and_mbc_objective()
 
     assert result["verdict"] == "ransomware"
     assert result["reasoning"] == [
-        "capa detected Impact behavior (ATT&CK) alongside Cryptography behavior (MBC), "
-        "consistent with ransomware"
+        "capa rule(s) 'destroy volume shadow copies' fired ATT&CK Impact and MBC Cryptography "
+        "behavior, consistent with ransomware",
+        "see Capabilities/YARA Matches below for full evidence detail (run with -v for match locations)",
     ]
 
 
@@ -400,3 +401,133 @@ def test_classify_every_non_unclassified_verdict_has_nonempty_reasoning(verdict,
 
     assert result["verdict"] == verdict
     assert result["reasoning"] != []
+
+
+def test_classify_detection_string_for_ransomware_win64_capa_only():
+    capabilities = [
+        {
+            "rule": "encrypt files",
+            "namespace": "data-manipulation/encryption",
+            "attack": [],
+            "mbc": [
+                {"parts": ["Cryptography", "Encrypt Data"], "objective": "Cryptography", "id": "C0027"},
+                {"parts": ["Impact", "Data Encrypted"], "objective": "Impact", "id": "F0002"},
+            ],
+        }
+    ]
+
+    result = classify(
+        yara_matches=[], capabilities=capabilities, likely_packed=False, tools={}, machine="0x8664"
+    )
+
+    assert result["detection"] == "Ransomware:Win64/CryptoImpact.capa"
+
+
+def test_classify_detection_string_uses_win32_for_x86_machine():
+    yara_matches = [{"rule": "generic_ransomware_dropper", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches, capabilities=[], likely_packed=False, tools={}, machine="0x14c"
+    )
+
+    assert result["detection"] == "Ransomware:Win32/CryptoImpact.yara"
+
+
+def test_classify_detection_string_reports_capa_plus_yara_when_both_contribute():
+    capabilities = [
+        {
+            "rule": "encrypt files",
+            "namespace": "data-manipulation/encryption",
+            "attack": [],
+            "mbc": [
+                {"parts": ["Cryptography", "Encrypt Data"], "objective": "Cryptography", "id": "C0027"},
+            ],
+        }
+    ]
+    yara_matches = [{"rule": "generic_ransomware_dropper", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches,
+        capabilities=capabilities,
+        likely_packed=False,
+        tools={},
+        machine="0x8664",
+    )
+
+    assert result["detection"] == "Ransomware:Win64/CryptoImpact.capa+yara"
+
+
+def test_classify_detection_is_none_when_unclassified():
+    tools = {
+        "yara": {"available": True, "reason": None},
+        "capa": {"available": True, "reason": None},
+    }
+
+    result = classify(yara_matches=[], capabilities=[], likely_packed=False, tools=tools)
+
+    assert result["detection"] is None
+
+
+def test_classify_detection_string_for_backdoor_prefers_discovery_signal():
+    capabilities = [
+        {
+            "rule": "remote command execution",
+            "namespace": "communication/socket",
+            "attack": [
+                "Command and Control::Non-Standard Port [T1571]",
+                "Discovery::Query System Information [T1082]",
+            ],
+            "mbc": [],
+        }
+    ]
+
+    result = classify(
+        yara_matches=[], capabilities=capabilities, likely_packed=False, tools={}, machine="0x8664"
+    )
+
+    assert result["detection"] == "Backdoor:Win64/C2Discovery.capa"
+
+
+def test_classify_reasoning_names_the_capa_rule_that_fired():
+    capabilities = [
+        {
+            "rule": "harvest browser credentials",
+            "namespace": "collection/browser",
+            "attack": ["Credential Access::Credentials from Password Stores [T1555]"],
+            "mbc": [],
+        }
+    ]
+
+    result = classify(yara_matches=[], capabilities=capabilities, likely_packed=False, tools={})
+
+    assert any("harvest browser credentials" in line for line in result["reasoning"])
+
+
+def test_classify_reasoning_names_the_yara_rule_that_fired():
+    yara_matches = [{"rule": "win32_worm_generic", "tags": ["Worm"], "matches": []}]
+
+    result = classify(yara_matches=yara_matches, capabilities=[], likely_packed=False, tools={})
+
+    assert "YARA rule 'win32_worm_generic' matched (tags: Worm)" in result["reasoning"]
+
+
+def test_classify_appends_navigation_hint_for_non_unclassified_verdict():
+    yara_matches = [{"rule": "generic_downloader", "tags": [], "matches": []}]
+
+    result = classify(yara_matches=yara_matches, capabilities=[], likely_packed=False, tools={})
+
+    assert (
+        "see Capabilities/YARA Matches below for full evidence detail (run with -v for match locations)"
+        in result["reasoning"]
+    )
+
+
+def test_classify_no_navigation_hint_for_unclassified_verdict():
+    tools = {
+        "yara": {"available": True, "reason": None},
+        "capa": {"available": True, "reason": None},
+    }
+
+    result = classify(yara_matches=[], capabilities=[], likely_packed=False, tools=tools)
+
+    assert not any("see Capabilities/YARA Matches" in line for line in result["reasoning"])
