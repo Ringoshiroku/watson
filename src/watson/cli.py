@@ -136,6 +136,53 @@ def _resolve_die(offline: bool) -> tuple[dict, str | None]:
     return {"available": False, "reason": _die_install_hint()}, None
 
 
+def _resolve_capability_selection(
+    rules_dir: Path | None,
+    capa_rules_dir: Path | None,
+    run_floss: bool | None,
+    run_die: bool | None,
+    run_yara: bool | None,
+    run_capa: bool | None,
+    subject: str,
+) -> tuple:
+    attempt_yara = True if run_yara is None else run_yara
+    attempt_capa = True if run_capa is None else run_capa
+    forced_verbose = False
+
+    # only ask once, up front, when nothing about which analyses to run was
+    # already decided via flags; explicit flags (any one of them) skip this
+    # entirely and fall through to each capability's own resolution below,
+    # same as before this prompt existed
+    if (
+        rules_dir is None
+        and capa_rules_dir is None
+        and run_floss is None
+        and run_die is None
+        and run_yara is None
+        and run_capa is None
+        and tool_discovery.is_interactive()
+    ):
+        print("anything not yet installed will be skipped; run 'watson setup' first to install it")
+        selection = select_options("which analyses do you want to run?", CAPABILITY_OPTIONS)
+        attempt_yara = "y" in selection.keys
+        attempt_capa = "c" in selection.keys
+        run_floss = "f" in selection.keys
+        run_die = "d" in selection.keys
+        forced_verbose = selection.via_all_shorthand
+
+    if run_floss is None:
+        run_floss = confirm(
+            f"run FLOSS string extraction on {subject} (finds strings, flags possible IOCs)?"
+        )
+
+    if run_die is None:
+        run_die = confirm(
+            f"run Detect It Easy packer/compiler/linker detection on {subject}?"
+        )
+
+    return attempt_yara, attempt_capa, run_floss, run_die, forced_verbose
+
+
 def build_case(
     file_path: Path,
     rules_dir: Path | None = None,
@@ -143,6 +190,8 @@ def build_case(
     capa_sigs_dir: Path | None = None,
     run_floss: bool | None = None,
     run_die: bool | None = None,
+    run_yara: bool | None = None,
+    run_capa: bool | None = None,
 ) -> tuple:
     hashes = compute_hashes(file_path)
     metadata = extract_pe_metadata(file_path)
@@ -164,28 +213,9 @@ def build_case(
         likely_packed=metadata["likely_packed"],
     )
 
-    attempt_yara = True
-    attempt_capa = True
-    forced_verbose = False
-
-    # only ask once, up front, when nothing about which analyses to run was
-    # already decided via flags; explicit flags (any one of them) skip this
-    # entirely and fall through to each capability's own resolution below,
-    # same as before this prompt existed
-    if (
-        rules_dir is None
-        and capa_rules_dir is None
-        and run_floss is None
-        and run_die is None
-        and tool_discovery.is_interactive()
-    ):
-        print("anything not yet installed will be skipped; run 'watson setup' first to install it")
-        selection = select_options("which analyses do you want to run?", CAPABILITY_OPTIONS)
-        attempt_yara = "y" in selection.keys
-        attempt_capa = "c" in selection.keys
-        run_floss = "f" in selection.keys
-        run_die = "d" in selection.keys
-        forced_verbose = selection.via_all_shorthand
+    attempt_yara, attempt_capa, run_floss, run_die, forced_verbose = _resolve_capability_selection(
+        rules_dir, capa_rules_dir, run_floss, run_die, run_yara, run_capa, file_path.name
+    )
 
     tools = {}
     yara_matches = []
@@ -227,11 +257,6 @@ def build_case(
     interesting_strings = []
     floss_raw = None
 
-    if run_floss is None:
-        run_floss = confirm(
-            f"run FLOSS string extraction on {file_path.name} (finds strings, flags possible IOCs)?"
-        )
-
     if run_floss:
         tools["floss"] = _resolve_floss(offline=True)
         if tools["floss"]["available"]:
@@ -249,11 +274,6 @@ def build_case(
         }
 
     die_detections = []
-
-    if run_die is None:
-        run_die = confirm(
-            f"run Detect It Easy packer/compiler/linker detection on {file_path.name}?"
-        )
 
     if run_die:
         tools["diec"], resolved_diec_path = _resolve_die(offline=True)

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from watson.cli import main
+from watson.cli import build_case, main
 
 
 def _isolate_rule_caches(monkeypatch, tmp_path):
@@ -786,3 +786,39 @@ def test_setup_reuses_already_populated_yara_cache_without_prompting(tmp_path, c
     assert exit_code == 0
     captured = capsys.readouterr()
     assert "yara: available" in captured.out
+
+
+def test_build_case_respects_explicit_run_yara_and_run_capa_false(compiled_pe, monkeypatch):
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("should not prompt when run_yara/run_capa/run_floss/run_die are all explicit")
+
+    monkeypatch.setattr("builtins.input", fail_if_called)
+
+    case, floss_raw, forced_verbose = build_case(
+        compiled_pe, run_yara=False, run_capa=False, run_floss=False, run_die=False
+    )
+
+    assert case.static.tools["yara"] == {
+        "available": False,
+        "reason": "not requested (skipped at the analysis-selection prompt)",
+    }
+    assert case.static.tools["capa"] == {
+        "available": False,
+        "reason": "not requested (skipped at the analysis-selection prompt)",
+    }
+    assert forced_verbose is False
+
+
+def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_and_die_once_each(
+    compiled_pe, monkeypatch
+):
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    answers = iter(["n", "n"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+
+    case, floss_raw, forced_verbose = build_case(compiled_pe, run_yara=False, run_capa=False)
+
+    assert case.static.tools["floss"]["reason"] == "floss not requested (use --floss)"
+    assert case.static.tools["diec"]["reason"] == "diec not requested (use --diec)"
