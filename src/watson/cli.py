@@ -349,6 +349,8 @@ def main(argv: list | None = None) -> int:
         help="Show full YARA match detail (string offsets and matched bytes) in the text report",
     )
 
+    setup_parser = subparsers.add_parser("setup", help="Check and install optional analysis tools")
+
     args = parser.parse_args(argv)
 
     if args.command == "analyze":
@@ -363,6 +365,9 @@ def main(argv: list | None = None) -> int:
             args.verbose,
         )
 
+    if args.command == "setup":
+        return _run_setup()
+
     return 1
 
 
@@ -374,6 +379,31 @@ def _resolve_out_dir(out_dir: Path | None) -> Path:
         if custom:
             return Path(custom)
     return DEFAULT_OUT_DIR
+
+
+def _run_setup() -> int:
+    print("Checking optional analysis tools...")
+    print()
+
+    tools = {}
+    tools["yara"], _ = _resolve_yara(None, offline=False)
+    tools["capa"], _, _ = _resolve_capa(None, None, offline=False)
+    tools["floss"] = _resolve_floss(offline=False)
+    tools["diec"], _ = _resolve_die(offline=False)
+
+    print()
+    print("Summary")
+    print("-------")
+    for name, status in tools.items():
+        state = "available" if status["available"] else "unavailable"
+        line = f"  {name}: {state}"
+        if status["reason"]:
+            line += f" ({status['reason']})"
+        print(line)
+
+    print()
+    print("Run 'watson analyze <file>' when ready.")
+    return 0
 
 
 def _run_analyze(

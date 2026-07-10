@@ -735,3 +735,54 @@ def test_analyze_explicit_flags_never_force_verbose(compiled_pe, tmp_path, capsy
     captured = capsys.readouterr()
     assert "watson_test_fixture_string" in captured.out
     assert "hello from watson test fixture" not in captured.out
+
+
+def test_setup_reports_summary_for_all_four_tools(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", tmp_path / "unused-yara-cache")
+    monkeypatch.setattr("watson.cli.CAPA_RULES_CACHE", tmp_path / "unused-capa-cache")
+    monkeypatch.setattr("watson.cli.CAPA_SIGS_REPO_CACHE", tmp_path / "unused-capa-sigs-cache")
+    monkeypatch.setattr("watson.cli.DIE_CACHE", tmp_path / "unused-die-cache")
+
+    exit_code = main(["setup"])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "Summary" in captured.out
+    assert "yara:" in captured.out
+    assert "capa:" in captured.out
+    assert "floss:" in captured.out
+    assert "diec:" in captured.out
+    assert "watson analyze" in captured.out
+
+
+def test_setup_non_interactive_fetches_nothing(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", tmp_path / "unused-yara-cache")
+    monkeypatch.setattr("watson.cli.CAPA_RULES_CACHE", tmp_path / "unused-capa-cache")
+    monkeypatch.setattr("watson.cli.CAPA_SIGS_REPO_CACHE", tmp_path / "unused-capa-sigs-cache")
+    monkeypatch.setattr("watson.cli.DIE_CACHE", tmp_path / "unused-die-cache")
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("setup should not prompt when not interactive")
+
+    monkeypatch.setattr("builtins.input", fail_if_called)
+
+    exit_code = main(["setup"])
+
+    assert exit_code == 0
+    assert not (tmp_path / "unused-yara-cache").exists()
+
+
+def test_setup_reuses_already_populated_yara_cache_without_prompting(tmp_path, capsys, monkeypatch):
+    cache_dir = tmp_path / "yara-cache"
+    cache_dir.mkdir()
+    (cache_dir / "fixture.yar").write_text("rule fixture { condition: true }")
+    monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", cache_dir)
+    monkeypatch.setattr("watson.cli.CAPA_RULES_CACHE", tmp_path / "unused-capa-cache")
+    monkeypatch.setattr("watson.cli.CAPA_SIGS_REPO_CACHE", tmp_path / "unused-capa-sigs-cache")
+    monkeypatch.setattr("watson.cli.DIE_CACHE", tmp_path / "unused-die-cache")
+
+    exit_code = main(["setup"])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "yara: available" in captured.out
