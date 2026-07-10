@@ -296,25 +296,25 @@ def test_analyze_prompts_which_analyses_to_run_when_nothing_specified(
     assert "floss: unavailable" in captured.out
 
 
-def test_analyze_prompts_to_fetch_yara_rules_when_selected_and_missing(
+def test_analyze_selecting_yara_when_missing_reports_unavailable_without_fetch_prompt(
     compiled_pe, tmp_path, capsys, monkeypatch
 ):
     out_dir = tmp_path / "cases"
-    monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", tmp_path / "yara-cache")
+    cache_dir = tmp_path / "yara-cache"
+    monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", cache_dir)
     monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
-    # first answer selects only yara at the analysis prompt, second declines
-    # the follow-up "fetch it now" offer
-    answers = iter(["y", "n"])
-    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+    # only ONE answer is needed now: select yara at the analysis prompt.
+    # analyze never offers to fetch anymore, so there is no second prompt to answer.
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
 
     exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
 
     assert exit_code == 0
     captured = capsys.readouterr()
     assert "yara: unavailable" in captured.out
-    assert "git clone" in captured.out
     assert "capa: unavailable" in captured.out
     assert "floss: unavailable" in captured.out
+    assert not cache_dir.exists()
 
 
 def test_analyze_reuses_already_fetched_yara_rules_without_prompting(
@@ -631,7 +631,7 @@ def test_analyze_diec_attempts_windows_zip_fetch_when_missing_on_windows(
     calls = []
 
     def fake_fetch(name, binary_relpath, cache_dir, archive_url, offline=False):
-        calls.append((name, binary_relpath, str(cache_dir), archive_url))
+        calls.append((name, binary_relpath, str(cache_dir), archive_url, offline))
         from watson.tool_discovery import ToolStatus
 
         return ToolStatus(name=name, available=False, path=None, reason="download declined")
@@ -643,11 +643,12 @@ def test_analyze_diec_attempts_windows_zip_fetch_when_missing_on_windows(
 
     assert exit_code == 0
     assert len(calls) == 1
-    name, binary_relpath, cache_dir, archive_url = calls[0]
+    name, binary_relpath, cache_dir, archive_url, offline = calls[0]
     assert binary_relpath == "die/diec.exe"
     assert archive_url == (
         "https://github.com/horsicq/DIE-engine/releases/download/3.21/die_win64_portable_3.21_x64.zip"
     )
+    assert offline is True
     case_files = list(out_dir.glob("*.json"))
     case_data = json.loads(case_files[0].read_text())
     assert "choco install die" in case_data["static"]["tools"]["diec"]["reason"]

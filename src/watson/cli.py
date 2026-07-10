@@ -74,6 +74,68 @@ def _die_windows_archive_url() -> str | None:
     return None
 
 
+def _resolve_yara(rules_dir: Path | None, offline: bool) -> tuple[dict, Path | None]:
+    yara_dir_status = find_or_fetch_dir(
+        "YARA rules", rules_dir, cache_dir=YARA_RULES_CACHE, fetch_url=YARA_RULES_URL, offline=offline
+    )
+    if not yara_dir_status.available:
+        return {"available": False, "reason": yara_dir_status.reason}, None
+
+    yara_status = find_module("yara", "yara", pip_package="yara-python", offline=offline)
+    if not yara_status.available:
+        return {"available": False, "reason": yara_status.reason}, None
+
+    return {"available": True, "reason": None}, Path(yara_dir_status.path)
+
+
+def _resolve_capa(
+    capa_rules_dir: Path | None, capa_sigs_dir: Path | None, offline: bool
+) -> tuple[dict, Path | None, Path | None]:
+    capa_rules_status = find_or_fetch_dir(
+        "capa rules", capa_rules_dir, cache_dir=CAPA_RULES_CACHE, fetch_url=CAPA_RULES_URL, offline=offline
+    )
+    if not capa_rules_status.available:
+        return {"available": False, "reason": capa_rules_status.reason}, None, None
+
+    capa_status = find_binary("capa", pip_package="flare-capa", offline=offline)
+    if not capa_status.available:
+        return {"available": False, "reason": capa_status.reason}, None, None
+
+    resolved_sigs_dir = capa_sigs_dir
+    if resolved_sigs_dir is None:
+        sigs_repo_status = find_or_fetch_dir(
+            "capa FLIRT signatures",
+            None,
+            cache_dir=CAPA_SIGS_REPO_CACHE,
+            fetch_url=CAPA_SIGS_URL,
+            offline=offline,
+        )
+        if sigs_repo_status.available:
+            resolved_sigs_dir = Path(sigs_repo_status.path) / "sigs"
+
+    return {"available": True, "reason": None}, Path(capa_rules_status.path), resolved_sigs_dir
+
+
+def _resolve_floss(offline: bool) -> dict:
+    floss_status = find_binary("floss", pip_package="flare-floss", offline=offline)
+    return {"available": floss_status.available, "reason": floss_status.reason}
+
+
+def _resolve_die(offline: bool) -> tuple[dict, str | None]:
+    die_status = find_binary("diec", pip_package=None, offline=offline)
+    if not die_status.available and platform.system() == "Windows":
+        die_status = find_or_fetch_zip_binary(
+            "diec",
+            "die/diec.exe",
+            cache_dir=DIE_CACHE,
+            archive_url=_die_windows_archive_url(),
+            offline=offline,
+        )
+    if die_status.available:
+        return {"available": True, "reason": None}, die_status.path
+    return {"available": False, "reason": _die_install_hint()}, None
+
+
 def build_case(
     file_path: Path,
     rules_dir: Path | None = None,
@@ -116,30 +178,23 @@ def build_case(
         and run_die is None
         and tool_discovery.is_interactive()
     ):
-        selected = select_options("which analyses do you want to run?", CAPABILITY_OPTIONS)
-        attempt_yara = "y" in selected
-        attempt_capa = "c" in selected
-        run_floss = "f" in selected
-        run_die = "d" in selected
+        selection = select_options("which analyses do you want to run?", CAPABILITY_OPTIONS)
+        attempt_yara = "y" in selection.keys
+        attempt_capa = "c" in selection.keys
+        run_floss = "f" in selection.keys
+        run_die = "d" in selection.keys
 
     tools = {}
     yara_matches = []
 
     if attempt_yara:
-        yara_dir_status = find_or_fetch_dir(
-            "YARA rules", rules_dir, cache_dir=YARA_RULES_CACHE, fetch_url=YARA_RULES_URL
-        )
-        if yara_dir_status.available:
-            yara_status = find_module("yara", "yara", pip_package="yara-python")
-            tools["yara"] = {"available": yara_status.available, "reason": yara_status.reason}
-            if yara_status.available:
-                try:
-                    with progress.stage("YARA scan"):
-                        yara_matches = scan_file(file_path, Path(yara_dir_status.path))
-                except YaraScanError as exc:
-                    tools["yara"] = {"available": False, "reason": f"yara scan failed: {exc}"}
-        else:
-            tools["yara"] = {"available": False, "reason": yara_dir_status.reason}
+        tools["yara"], resolved_yara_dir = _resolve_yara(rules_dir, offline=True)
+        if tools["yara"]["available"]:
+            try:
+                with progress.stage("YARA scan"):
+                    yara_matches = scan_file(file_path, resolved_yara_dir)
+            except YaraScanError as exc:
+                tools["yara"] = {"available": False, "reason": f"yara scan failed: {exc}"}
     else:
         tools["yara"] = {
             "available": False,
@@ -149,32 +204,17 @@ def build_case(
     capabilities = []
 
     if attempt_capa:
-        capa_rules_status = find_or_fetch_dir(
-            "capa rules", capa_rules_dir, cache_dir=CAPA_RULES_CACHE, fetch_url=CAPA_RULES_URL
+        tools["capa"], resolved_capa_rules_dir, resolved_sigs_dir = _resolve_capa(
+            capa_rules_dir, capa_sigs_dir, offline=True
         )
-        if capa_rules_status.available:
-            capa_status = find_binary("capa", pip_package="flare-capa")
-            tools["capa"] = {"available": capa_status.available, "reason": capa_status.reason}
-            if capa_status.available:
-                resolved_sigs_dir = capa_sigs_dir
-                if resolved_sigs_dir is None:
-                    sigs_repo_status = find_or_fetch_dir(
-                        "capa FLIRT signatures",
-                        None,
-                        cache_dir=CAPA_SIGS_REPO_CACHE,
-                        fetch_url=CAPA_SIGS_URL,
+        if tools["capa"]["available"]:
+            try:
+                with progress.stage("capa analysis"):
+                    capabilities = capa_scan_file(
+                        file_path, resolved_capa_rules_dir, signatures_dir=resolved_sigs_dir
                     )
-                    if sigs_repo_status.available:
-                        resolved_sigs_dir = Path(sigs_repo_status.path) / "sigs"
-                try:
-                    with progress.stage("capa analysis"):
-                        capabilities = capa_scan_file(
-                            file_path, Path(capa_rules_status.path), signatures_dir=resolved_sigs_dir
-                        )
-                except CapaScanError as exc:
-                    tools["capa"] = {"available": False, "reason": f"capa scan failed: {exc}"}
-        else:
-            tools["capa"] = {"available": False, "reason": capa_rules_status.reason}
+            except CapaScanError as exc:
+                tools["capa"] = {"available": False, "reason": f"capa scan failed: {exc}"}
     else:
         tools["capa"] = {
             "available": False,
@@ -190,9 +230,8 @@ def build_case(
         )
 
     if run_floss:
-        floss_status = find_binary("floss", pip_package="flare-floss")
-        tools["floss"] = {"available": floss_status.available, "reason": floss_status.reason}
-        if floss_status.available:
+        tools["floss"] = _resolve_floss(offline=True)
+        if tools["floss"]["available"]:
             try:
                 with progress.stage("FLOSS string extraction"):
                     floss_raw = floss_scan_file(file_path)
@@ -214,21 +253,14 @@ def build_case(
         )
 
     if run_die:
-        die_status = find_binary("diec", pip_package=None)
-        if not die_status.available and platform.system() == "Windows":
-            die_status = find_or_fetch_zip_binary(
-                "diec", "die/diec.exe", cache_dir=DIE_CACHE, archive_url=_die_windows_archive_url()
-            )
-        if die_status.available:
-            tools["diec"] = {"available": True, "reason": None}
+        tools["diec"], resolved_diec_path = _resolve_die(offline=True)
+        if tools["diec"]["available"]:
             try:
                 with progress.stage("Detect It Easy scan"):
-                    die_detections = die_scan_file(file_path, diec_binary=die_status.path)
+                    die_detections = die_scan_file(file_path, diec_binary=resolved_diec_path)
             except DieScanError as exc:
                 tools["diec"] = {"available": False, "reason": f"diec scan failed: {exc}"}
                 die_detections = []
-        else:
-            tools["diec"] = {"available": False, "reason": _die_install_hint()}
     else:
         tools["diec"] = {
             "available": False,
