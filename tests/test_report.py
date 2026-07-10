@@ -371,6 +371,77 @@ def test_build_text_report_shows_multi_tactic_capability_under_each_tactic():
     assert "\nPrivilege Escalation\n" in report
 
 
+def _sample_case_with_capability_evidence() -> Case:
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        capabilities=[
+            {
+                "rule": "delay execution",
+                "namespace": "anti-analysis/anti-debugging",
+                "attack": [],
+                "mbc": [],
+                "evidence": [
+                    {"feature": "api", "value": "Sleep", "addresses": [1342177894], "more_addresses": 0},
+                    {"feature": "api", "value": "WaitForSingleObject", "addresses": [], "more_addresses": 0},
+                ],
+            }
+        ],
+    )
+    return Case(identity=identity, static=static)
+
+
+def test_build_text_report_shows_capa_evidence_when_verbose():
+    case = _sample_case_with_capability_evidence()
+
+    report = build_text_report(case, verbose=True)
+
+    assert f"api: Sleep @ {hex(1342177894)}" in report
+    assert "api: WaitForSingleObject" in report
+
+
+def test_build_text_report_hides_capa_evidence_by_default():
+    case = _sample_case_with_capability_evidence()
+
+    report = build_text_report(case)
+
+    assert "delay execution" in report
+    assert "api: Sleep" not in report
+
+
+def test_build_text_report_shows_more_addresses_suffix():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        capabilities=[
+            {
+                "rule": "delay execution",
+                "namespace": "anti-analysis/anti-debugging",
+                "attack": [],
+                "mbc": [],
+                "evidence": [
+                    {"feature": "api", "value": "Sleep", "addresses": [1, 2], "more_addresses": 3},
+                ],
+            }
+        ],
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case, verbose=True)
+
+    assert "(+3 more)" in report
+
+
 def test_build_text_report_puts_ungrouped_tactic_bucket_last():
     identity = Identity(
         sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"

@@ -48,6 +48,19 @@ def _format_mapping_entry(entry) -> str:
     return f"{label} [{entry_id}]" if entry_id else label
 
 
+def _format_capa_evidence_line(evidence: dict) -> str:
+    feature = evidence.get("feature") or "feature"
+    value = evidence.get("value")
+    addresses = evidence.get("addresses") or []
+    more = evidence.get("more_addresses", 0)
+    if not addresses:
+        return f"    {feature}: {value}"
+    addr_text = ", ".join(hex(a) for a in addresses)
+    if more:
+        addr_text += f" (+{more} more)"
+    return f"    {feature}: {value} @ {addr_text}"
+
+
 def _attack_tactic(entry) -> str:
     if isinstance(entry, str):
         return entry.split("::", 1)[0] if "::" in entry else "Ungrouped"
@@ -217,6 +230,9 @@ def build_text_report(case: Case, verbose: bool = False) -> str:
                     lines.append(f"    ATT&CK: {_format_mapping_entry(attack)}")
                 for mbc in capability.get("mbc") or []:
                     lines.append(f"    MBC: {_format_mapping_entry(mbc)}")
+                if verbose:
+                    for evidence in capability.get("evidence") or []:
+                        lines.append(_format_capa_evidence_line(evidence))
     else:
         lines.append("  none")
 
