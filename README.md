@@ -79,7 +79,10 @@ you never have to go through a prompt again:
   `<name>` is the scanned file's own name with dots swapped for dashes
   (so `rb.exe` becomes `rb-exe`, never a `rb.exe.json`-style double
   extension), `<md5>` is the sample's MD5. Named this way instead of by
-  hash alone so the filename itself tells you what it is.
+  hash alone so the filename itself tells you what it is. Also always
+  writes `<out>/<timestamp>-<name>-<md5>.txt`, the same readable report
+  printed to stdout, saved to disk so you don't have to open the JSON to
+  read it back later.
 - `-y DIR`, `--rules-dir DIR`, use this exact YARA rule directory instead
   of the interactive fetch/cache flow (recurses into subdirectories,
   matches both `.yar` and `.yara`, and skips over any individual rule
@@ -101,9 +104,10 @@ you never have to go through a prompt again:
   Windows) or from https://github.com/horsicq/Detect-It-Easy. Omit to be
   asked interactively.
 - `-v`, `--verbose`, show full YARA match detail (string identifier, hex
-  offset, matched bytes) in the text report. Omitted by default so the
-  report stays skimmable, this detail is always present in the case JSON
-  regardless of this flag.
+  offset, matched bytes) and capa match evidence (the specific feature,
+  e.g. an API call, and the address it matched at) in the text report.
+  Omitted by default so the report stays skimmable, this detail is always
+  present in the case JSON regardless of this flag.
 
 Passing any of `-y`/`-c`/`-s`/`-f` skips the analysis-selection prompt
 entirely for the ones you specified and uses (or requires) exactly the
@@ -154,11 +158,20 @@ code from any of them is copied, only the general shape.
 
 Every run produces a coarse classification: a type label (`ransomware`,
 `worm`, `infostealer`, `backdoor`, `downloader`, `adware`, `trojan`, or
-`unclassified`), a risk tier (`low`/`medium`/`high`), and a plain-language
-list of exactly which evidence drove the call. It's computed entirely
-from the YARA/capa signals already collected, no extra tool, setup, or
-flag needed. It leads the text report, and it's present in the saved
-case JSON alongside every other finding.
+`unclassified`), a risk tier (`low`/`medium`/`high`), a Defender-style
+detection name (e.g. `Ransomware:Win64/CryptoImpact.capa`), and a
+plain-language reasoning list that names the exact YARA or capa rule
+that fired, plus a pointer to the Capabilities/YARA Matches sections
+below for the full evidence. It's computed entirely from the YARA/capa
+signals already collected, no extra tool, setup, or flag needed. It
+leads the text report, and it's present in the saved case JSON alongside
+every other finding.
+
+The detection name isn't a new algorithm, it's a compact label built
+from the same verdict and evidence already computed: verdict, a `Win32`/
+`Win64` platform tag derived from the PE's machine type, a short token
+for which specific signal fired (e.g. `CryptoImpact`, `LateralMovement`),
+and which tool(s) contributed (`capa`, `yara`, or `capa+yara`).
 
 This is a heuristic type category, not malware family attribution (it
 won't tell you "Emotet", only "downloader") and not a numeric risk score.
