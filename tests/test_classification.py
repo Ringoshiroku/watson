@@ -531,3 +531,100 @@ def test_classify_no_navigation_hint_for_unclassified_verdict():
     result = classify(yara_matches=[], capabilities=[], likely_packed=False, tools=tools)
 
     assert not any("see Capabilities/YARA Matches" in line for line in result["reasoning"])
+
+
+def test_classify_trojan_verdict_gets_navigation_hint_too():
+    capabilities = [
+        {
+            "rule": "read file",
+            "namespace": "host-interaction/file-system/read",
+            "attack": ["Execution::Command and Scripting Interpreter [T1059]"],
+            "mbc": [],
+        }
+    ]
+    result = classify(yara_matches=[], capabilities=capabilities, likely_packed=False, tools={})
+    assert result["verdict"] == "trojan"
+    assert (
+        "see Capabilities/YARA Matches below for full evidence detail (run with -v for match locations)"
+        in result["reasoning"]
+    )
+
+
+def test_classify_detection_string_for_worm():
+    capabilities = [
+        {
+            "rule": "copy to removable drive",
+            "namespace": "host-interaction/file-system",
+            "attack": ["Lateral Movement::Replication Through Removable Media [T1091]"],
+            "mbc": [],
+        }
+    ]
+    result = classify(yara_matches=[], capabilities=capabilities, likely_packed=False, tools={}, machine="0x8664")
+    assert result["detection"] == "Worm:Win64/LateralMovement.capa"
+
+
+def test_classify_detection_string_for_infostealer():
+    capabilities = [
+        {
+            "rule": "harvest browser credentials",
+            "namespace": "collection/browser",
+            "attack": ["Credential Access::Credentials from Password Stores [T1555]"],
+            "mbc": [],
+        }
+    ]
+    result = classify(yara_matches=[], capabilities=capabilities, likely_packed=False, tools={}, machine="0x14c")
+    assert result["detection"] == "Infostealer:Win32/CredentialAccess.capa"
+
+
+def test_classify_detection_string_for_downloader_via_command_and_control():
+    capabilities = [
+        {
+            "rule": "http c2 beacon",
+            "namespace": "communication/http",
+            "attack": ["Command and Control::Web Protocols [T1071.001]"],
+            "mbc": [],
+        }
+    ]
+    result = classify(yara_matches=[], capabilities=capabilities, likely_packed=False, tools={}, machine="0x8664")
+    assert result["detection"] == "Downloader:Win64/C2.capa"
+
+
+def test_classify_detection_string_for_downloader_via_dropper_keyword():
+    yara_matches = [{"rule": "generic_downloader", "tags": [], "matches": []}]
+    result = classify(yara_matches=yara_matches, capabilities=[], likely_packed=False, tools={}, machine="0x8664")
+    assert result["detection"] == "Downloader:Win64/DropperKeyword.yara"
+
+
+def test_classify_detection_string_for_adware():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+    result = classify(yara_matches=yara_matches, capabilities=[], likely_packed=False, tools={}, machine="0x8664")
+    assert result["detection"] == "Adware:Win64/PUA.yara"
+
+
+def test_classify_detection_string_for_trojan():
+    capabilities = [
+        {
+            "rule": "read file",
+            "namespace": "host-interaction/file-system/read",
+            "attack": ["Execution::Command and Scripting Interpreter [T1059]"],
+            "mbc": [],
+        }
+    ]
+    result = classify(yara_matches=[], capabilities=capabilities, likely_packed=False, tools={}, machine="0x8664")
+    assert result["detection"] == "Trojan:Win64/Generic.capa"
+
+
+def test_classify_detection_string_for_backdoor_prefers_execution_when_discovery_absent():
+    capabilities = [
+        {
+            "rule": "remote command execution",
+            "namespace": "communication/socket",
+            "attack": [
+                "Command and Control::Non-Standard Port [T1571]",
+                "Execution::Command and Scripting Interpreter [T1059]",
+            ],
+            "mbc": [],
+        }
+    ]
+    result = classify(yara_matches=[], capabilities=capabilities, likely_packed=False, tools={}, machine="0x8664")
+    assert result["detection"] == "Backdoor:Win64/C2Execution.capa"

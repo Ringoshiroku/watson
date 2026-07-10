@@ -11,6 +11,21 @@ _BACKDOOR_WHOLE_WORD_KEYWORDS = ("rat",)
 _DOWNLOADER_KEYWORDS = ("download", "dropper")
 _ADWARE_KEYWORDS = ("adware", "pua", "unwanted")
 
+_YARA_KEYWORDS_BY_VERDICT = {
+    "ransomware": (_RANSOMWARE_KEYWORDS, ()),
+    "worm": (_WORM_KEYWORDS, ()),
+    "infostealer": (_INFOSTEALER_KEYWORDS, ()),
+    "backdoor": (_BACKDOOR_KEYWORDS, _BACKDOOR_WHOLE_WORD_KEYWORDS),
+    "downloader": (_DOWNLOADER_KEYWORDS, ()),
+    "adware": (_ADWARE_KEYWORDS, ()),
+}
+
+
+def _yara_hit_for_verdict(verdict: str, yara_matches: list):
+    substrings, whole_words = _YARA_KEYWORDS_BY_VERDICT.get(verdict, ((), ()))
+    return _yara_keyword_hit(yara_matches, substrings=substrings, whole_words=whole_words)
+
+
 _RISK_BY_VERDICT = {
     "ransomware": "high",
     "worm": "high",
@@ -203,7 +218,7 @@ def _reasoning(
                         rules, "ATT&CK Impact and MBC Cryptography behavior, consistent with ransomware"
                     )
                 )
-            yara_hit = _yara_keyword_hit(yara_matches, substrings=_RANSOMWARE_KEYWORDS)
+            yara_hit = _yara_hit_for_verdict(verdict, yara_matches)
             if yara_hit:
                 reasoning.append(_yara_reasoning_line(yara_hit))
         elif verdict == "worm":
@@ -213,7 +228,7 @@ def _reasoning(
                         tactics["Lateral Movement"], "ATT&CK Lateral Movement behavior, consistent with a worm"
                     )
                 )
-            yara_hit = _yara_keyword_hit(yara_matches, substrings=_WORM_KEYWORDS)
+            yara_hit = _yara_hit_for_verdict(verdict, yara_matches)
             if yara_hit:
                 reasoning.append(_yara_reasoning_line(yara_hit))
         elif verdict == "infostealer":
@@ -224,7 +239,7 @@ def _reasoning(
                         "ATT&CK Credential Access behavior, consistent with an infostealer",
                     )
                 )
-            yara_hit = _yara_keyword_hit(yara_matches, substrings=_INFOSTEALER_KEYWORDS)
+            yara_hit = _yara_hit_for_verdict(verdict, yara_matches)
             if yara_hit:
                 reasoning.append(_yara_reasoning_line(yara_hit))
         elif verdict == "backdoor":
@@ -240,13 +255,11 @@ def _reasoning(
                         "consistent with a backdoor",
                     )
                 )
-            yara_hit = _yara_keyword_hit(
-                yara_matches, substrings=_BACKDOOR_KEYWORDS, whole_words=_BACKDOOR_WHOLE_WORD_KEYWORDS
-            )
+            yara_hit = _yara_hit_for_verdict(verdict, yara_matches)
             if yara_hit:
                 reasoning.append(_yara_reasoning_line(yara_hit))
         elif verdict == "downloader":
-            yara_hit = _yara_keyword_hit(yara_matches, substrings=_DOWNLOADER_KEYWORDS)
+            yara_hit = _yara_hit_for_verdict(verdict, yara_matches)
             if yara_hit:
                 reasoning.append(_yara_reasoning_line(yara_hit))
             if "Command and Control" in tactics:
@@ -257,13 +270,13 @@ def _reasoning(
                     )
                 )
         elif verdict == "adware":
-            yara_hit = _yara_keyword_hit(yara_matches, substrings=_ADWARE_KEYWORDS)
+            yara_hit = _yara_hit_for_verdict(verdict, yara_matches)
             if yara_hit:
                 reasoning.append(_yara_reasoning_line(yara_hit))
 
-        reasoning.append(
-            "see Capabilities/YARA Matches below for full evidence detail (run with -v for match locations)"
-        )
+    reasoning.append(
+        "see Capabilities/YARA Matches below for full evidence detail (run with -v for match locations)"
+    )
 
     if likely_packed:
         reasoning.append("risk raised one tier because the sample is likely packed")
@@ -298,29 +311,27 @@ def _detection(verdict: str, yara_matches: list, capabilities: list, machine: st
 
     if verdict == "ransomware":
         capa_rules = objectives.get("Cryptography", []) or tactics.get("Impact", [])
-        yara_hit = _yara_keyword_hit(yara_matches, substrings=_RANSOMWARE_KEYWORDS)
+        yara_hit = _yara_hit_for_verdict(verdict, yara_matches)
         signal = _VERDICT_SIGNAL["ransomware"]
     elif verdict == "worm":
         capa_rules = tactics.get("Lateral Movement", [])
-        yara_hit = _yara_keyword_hit(yara_matches, substrings=_WORM_KEYWORDS)
+        yara_hit = _yara_hit_for_verdict(verdict, yara_matches)
         signal = _VERDICT_SIGNAL["worm"]
     elif verdict == "infostealer":
         capa_rules = tactics.get("Credential Access", [])
-        yara_hit = _yara_keyword_hit(yara_matches, substrings=_INFOSTEALER_KEYWORDS)
+        yara_hit = _yara_hit_for_verdict(verdict, yara_matches)
         signal = _VERDICT_SIGNAL["infostealer"]
     elif verdict == "backdoor":
         capa_rules = tactics.get("Command and Control", [])
-        yara_hit = _yara_keyword_hit(
-            yara_matches, substrings=_BACKDOOR_KEYWORDS, whole_words=_BACKDOOR_WHOLE_WORD_KEYWORDS
-        )
+        yara_hit = _yara_hit_for_verdict(verdict, yara_matches)
         signal = "C2Discovery" if "Discovery" in tactics else "C2Execution"
     elif verdict == "downloader":
-        yara_hit = _yara_keyword_hit(yara_matches, substrings=_DOWNLOADER_KEYWORDS)
+        yara_hit = _yara_hit_for_verdict(verdict, yara_matches)
         capa_rules = tactics.get("Command and Control", [])
         signal = "C2" if "Command and Control" in tactics else "DropperKeyword"
     elif verdict == "adware":
         capa_rules = []
-        yara_hit = _yara_keyword_hit(yara_matches, substrings=_ADWARE_KEYWORDS)
+        yara_hit = _yara_hit_for_verdict(verdict, yara_matches)
         signal = _VERDICT_SIGNAL["adware"]
     else:  # trojan: the catch-all, cite everything that's present
         capa_rules = [capability["rule"] for capability in capabilities]
