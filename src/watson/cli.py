@@ -16,7 +16,14 @@ from watson.ioc_strings import find_interesting_strings
 from watson.pe_metadata import InvalidPEError, extract_pe_metadata
 from watson.report import build_json_report, build_text_report
 from watson import progress, tool_discovery
-from watson.tool_discovery import confirm, find_binary, find_module, find_or_fetch_dir, select_options
+from watson.tool_discovery import (
+    confirm,
+    find_binary,
+    find_module,
+    find_or_fetch_dir,
+    find_or_fetch_zip_binary,
+    select_options,
+)
 from watson.yara_scan import YaraScanError, scan_file
 
 WATSON_HOME = Path.home() / ".watson"
@@ -27,6 +34,11 @@ CAPA_RULES_URL = "https://github.com/mandiant/capa-rules"
 CAPA_SIGS_REPO_CACHE = WATSON_HOME / "rules" / "capa-sigs-repo"
 CAPA_SIGS_URL = "https://github.com/mandiant/capa"
 DEFAULT_OUT_DIR = Path("cases")
+DIE_VERSION = "3.21"
+DIE_CACHE = WATSON_HOME / "tools" / "diec"
+DIE_RELEASE_BASE = f"https://github.com/horsicq/DIE-engine/releases/download/{DIE_VERSION}"
+DIE_WIN64_URL = f"{DIE_RELEASE_BASE}/die_win64_portable_{DIE_VERSION}_x64.zip"
+DIE_WIN32_URL = f"{DIE_RELEASE_BASE}/die_win32_portable_{DIE_VERSION}_x86.zip"
 
 # Same letters as the -y/-c/-f/-d short flags, so what you'd type at the prompt
 # and what you'd pass on the command line to skip it match exactly.
@@ -51,6 +63,15 @@ def _die_install_hint() -> str:
             "https://github.com/horsicq/Detect-It-Easy/releases"
         )
     return "see https://github.com/horsicq/Detect-It-Easy for install instructions"
+
+
+def _die_windows_archive_url() -> str | None:
+    machine = platform.machine().lower()
+    if machine in ("amd64", "x86_64"):
+        return DIE_WIN64_URL
+    if machine in ("x86", "i386", "i686"):
+        return DIE_WIN32_URL
+    return None
 
 
 def build_case(
@@ -194,11 +215,15 @@ def build_case(
 
     if run_die:
         die_status = find_binary("diec", pip_package=None)
+        if not die_status.available and platform.system() == "Windows":
+            die_status = find_or_fetch_zip_binary(
+                "diec", "die/diec.exe", cache_dir=DIE_CACHE, archive_url=_die_windows_archive_url()
+            )
         if die_status.available:
             tools["diec"] = {"available": True, "reason": None}
             try:
                 with progress.stage("Detect It Easy scan"):
-                    die_detections = die_scan_file(file_path)
+                    die_detections = die_scan_file(file_path, diec_binary=die_status.path)
             except DieScanError as exc:
                 tools["diec"] = {"available": False, "reason": f"diec scan failed: {exc}"}
                 die_detections = []

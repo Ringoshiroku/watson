@@ -15,6 +15,7 @@ def _isolate_rule_caches(monkeypatch, tmp_path):
     monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", tmp_path / "unused-yara-cache")
     monkeypatch.setattr("watson.cli.CAPA_RULES_CACHE", tmp_path / "unused-capa-cache")
     monkeypatch.setattr("watson.cli.CAPA_SIGS_REPO_CACHE", tmp_path / "unused-capa-sigs-cache")
+    monkeypatch.setattr("watson.cli.DIE_CACHE", tmp_path / "unused-die-cache")
 
 
 def test_analyze_writes_case_and_prints_report(compiled_pe, tmp_path, capsys, monkeypatch):
@@ -613,3 +614,62 @@ def test_analyze_diec_unavailable_reason_mentions_chocolatey_on_windows(
     case_files = list(out_dir.glob("*.json"))
     case_data = json.loads(case_files[0].read_text())
     assert "choco install die" in case_data["static"]["tools"]["diec"]["reason"]
+
+
+def test_analyze_diec_attempts_windows_zip_fetch_when_missing_on_windows(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    original_which = shutil.which
+    monkeypatch.setattr(
+        "watson.tool_discovery.shutil.which",
+        lambda name: None if name == "diec" else original_which(name),
+    )
+    monkeypatch.setattr("watson.cli.platform.system", lambda: "Windows")
+    monkeypatch.setattr("watson.cli.platform.machine", lambda: "AMD64")
+
+    calls = []
+
+    def fake_fetch(name, binary_relpath, cache_dir, archive_url, offline=False):
+        calls.append((name, binary_relpath, str(cache_dir), archive_url))
+        from watson.tool_discovery import ToolStatus
+
+        return ToolStatus(name=name, available=False, path=None, reason="download declined")
+
+    monkeypatch.setattr("watson.cli.find_or_fetch_zip_binary", fake_fetch)
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir), "-d"])
+
+    assert exit_code == 0
+    assert len(calls) == 1
+    name, binary_relpath, cache_dir, archive_url = calls[0]
+    assert binary_relpath == "die/diec.exe"
+    assert archive_url == (
+        "https://github.com/horsicq/DIE-engine/releases/download/3.21/die_win64_portable_3.21_x64.zip"
+    )
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads(case_files[0].read_text())
+    assert "choco install die" in case_data["static"]["tools"]["diec"]["reason"]
+
+
+def test_analyze_diec_passes_resolved_path_to_scan_file(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    fake_diec = tmp_path / "fake_diec"
+    fake_diec.write_text('#!/bin/sh\necho \'{"detects": []}\'\n')
+    fake_diec.chmod(0o755)
+
+    original_which = shutil.which
+    monkeypatch.setattr(
+        "watson.tool_discovery.shutil.which",
+        lambda name: str(fake_diec) if name == "diec" else original_which(name),
+    )
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir), "-d"])
+
+    assert exit_code == 0
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads(case_files[0].read_text())
+    assert case_data["static"]["tools"]["diec"]["available"] is True
+    assert case_data["static"]["die_detections"] == []
