@@ -197,6 +197,10 @@ def test_analyze_without_capa_rules_dir_reports_capa_unavailable(compiled_pe, tm
 
 requires_floss = pytest.mark.skipif(shutil.which("floss") is None, reason="floss not installed")
 
+requires_stringsifter = pytest.mark.skipif(
+    shutil.which("rank_strings") is None, reason="stringsifter not installed"
+)
+
 
 @requires_floss
 def test_analyze_with_floss_flag_writes_raw_sidecar_and_reports_available(
@@ -419,6 +423,7 @@ def test_analyze_with_explicit_floss_flag_never_prompts(compiled_pe, tmp_path, c
             str(empty_dir),
             "--floss",
             "--diec",
+            "--rank-strings",
         ]
     )
 
@@ -738,7 +743,7 @@ def test_analyze_explicit_flags_never_force_verbose(compiled_pe, tmp_path, capsy
     assert "hello from watson test fixture" not in captured.out
 
 
-def test_setup_reports_summary_for_all_four_tools(tmp_path, capsys, monkeypatch):
+def test_setup_reports_summary_for_all_five_tools(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", tmp_path / "unused-yara-cache")
     monkeypatch.setattr("watson.cli.CAPA_RULES_CACHE", tmp_path / "unused-capa-cache")
     monkeypatch.setattr("watson.cli.CAPA_SIGS_REPO_CACHE", tmp_path / "unused-capa-sigs-cache")
@@ -753,6 +758,7 @@ def test_setup_reports_summary_for_all_four_tools(tmp_path, capsys, monkeypatch)
     assert "capa:" in captured.out
     assert "floss:" in captured.out
     assert "diec:" in captured.out
+    assert "stringsifter:" in captured.out
     assert "watson analyze" in captured.out
 
 
@@ -793,12 +799,19 @@ def test_build_case_respects_explicit_run_yara_and_run_capa_false(compiled_pe, m
     monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
 
     def fail_if_called(*args, **kwargs):
-        raise AssertionError("should not prompt when run_yara/run_capa/run_floss/run_die are all explicit")
+        raise AssertionError(
+            "should not prompt when run_yara/run_capa/run_floss/run_die/run_rank are all explicit"
+        )
 
     monkeypatch.setattr("builtins.input", fail_if_called)
 
-    case, floss_raw, forced_verbose = build_case(
-        compiled_pe, run_yara=False, run_capa=False, run_floss=False, run_die=False
+    case, floss_raw, forced_verbose, ranked_strings_full = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=False,
+        run_rank=False,
     )
 
     assert case.static.tools["yara"] == {
@@ -809,20 +822,28 @@ def test_build_case_respects_explicit_run_yara_and_run_capa_false(compiled_pe, m
         "available": False,
         "reason": "not requested (skipped at the analysis-selection prompt)",
     }
+    assert case.static.tools["stringsifter"] == {
+        "available": False,
+        "reason": "stringsifter not requested (use --rank-strings)",
+    }
     assert forced_verbose is False
+    assert ranked_strings_full is None
 
 
-def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_and_die_once_each(
+def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_rank_once_each(
     compiled_pe, monkeypatch
 ):
     monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
-    answers = iter(["n", "n"])
+    answers = iter(["n", "n", "n"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
 
-    case, floss_raw, forced_verbose = build_case(compiled_pe, run_yara=False, run_capa=False)
+    case, floss_raw, forced_verbose, ranked_strings_full = build_case(
+        compiled_pe, run_yara=False, run_capa=False
+    )
 
     assert case.static.tools["floss"]["reason"] == "floss not requested (use --floss)"
     assert case.static.tools["diec"]["reason"] == "diec not requested (use --diec)"
+    assert case.static.tools["stringsifter"]["reason"] == "stringsifter not requested (use --rank-strings)"
 
 
 def test_analyze_directory_recursively_finds_and_analyzes_files(compiled_pe, tmp_path, capsys, monkeypatch):
@@ -900,7 +921,7 @@ def test_analyze_directory_asks_floss_and_die_confirmation_once_each(
     )
 
     assert exit_code == 0
-    assert call_count["n"] == 2
+    assert call_count["n"] == 3
 
 
 def test_analyze_directory_skips_non_pe_files_and_continues(compiled_pe, tmp_path, capsys, monkeypatch):
@@ -993,3 +1014,101 @@ def test_analyze_rejects_missing_path_as_neither_file_nor_directory(tmp_path, ca
     assert exit_code == 1
     captured = capsys.readouterr()
     assert "is not a file or directory" in captured.err
+
+
+def test_analyze_rank_strings_flag_without_floss_reports_floss_did_not_run(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir), "--rank-strings"])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "stringsifter: unavailable (floss did not run" in captured.out
+
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith("_floss.json")]
+    case_data = json.loads(case_files[0].read_text())
+    assert case_data["static"]["tools"]["stringsifter"]["reason"] == (
+        "floss did not run (string ranking needs FLOSS's output)"
+    )
+    assert not list(out_dir.glob("*_ranked_strings.json"))
+
+
+def test_analyze_without_rank_strings_flag_reports_stringsifter_not_requested(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "stringsifter: unavailable" in captured.out
+
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith("_floss.json")]
+    case_data = json.loads(case_files[0].read_text())
+    assert case_data["static"]["tools"]["stringsifter"]["reason"] == (
+        "stringsifter not requested (use --rank-strings)"
+    )
+
+
+@requires_floss
+def test_analyze_selecting_floss_and_rank_together_lets_ranking_attempt_run(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(
+        ["analyze", str(compiled_pe), "--out", str(out_dir), "--floss", "--rank-strings"]
+    )
+
+    assert exit_code == 0
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith("_floss.json")]
+    case_data = json.loads(case_files[0].read_text())
+    assert case_data["static"]["tools"]["stringsifter"]["reason"] != (
+        "floss did not run (string ranking needs FLOSS's output)"
+    )
+
+
+@requires_floss
+@requires_stringsifter
+def test_analyze_with_floss_and_rank_strings_flags_writes_ranked_sidecar(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(
+        ["analyze", str(compiled_pe), "--out", str(out_dir), "--floss", "--rank-strings"]
+    )
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "stringsifter: available" in captured.out
+    assert "Ranked Strings" in captured.out
+
+    sidecars = list(out_dir.glob("*_ranked_strings.json"))
+    assert len(sidecars) == 1
+
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith(("_floss.json", "_ranked_strings.json"))]
+    case_data = json.loads(case_files[0].read_text())
+    assert len(case_data["static"]["ranked_strings"]) <= 20
+
+
+def test_analyze_selecting_rank_without_floss_via_mega_prompt_reports_floss_did_not_run(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "r")
+
+    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "stringsifter: unavailable (floss did not run" in captured.out

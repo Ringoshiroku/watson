@@ -665,3 +665,44 @@ def test_build_text_report_shows_no_die_detections_when_empty():
     report = build_text_report(case)
 
     assert "Detect It Easy" in report
+
+
+def _sample_case_with_ranked_strings() -> Case:
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        ranked_strings=[
+            {"string": "cmd.exe /c whoami", "source": "decoded_strings", "score": 95.5},
+        ],
+    )
+    return Case(identity=identity, static=static)
+
+
+def test_build_text_report_shows_ranked_strings():
+    case = _sample_case_with_ranked_strings()
+
+    report = build_text_report(case)
+
+    assert "Ranked Strings" in report
+    assert "95.50  cmd.exe /c whoami (decoded_strings)" in report
+
+
+def test_build_text_report_shows_no_ranked_strings_when_empty():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(pe_metadata=pe_metadata)
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "Ranked Strings" in report
+    assert report.rstrip().endswith("none")
