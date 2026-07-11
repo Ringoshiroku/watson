@@ -18,8 +18,8 @@ pip install -e ".[dev]"
 This installs watson itself, the `watson` console script, `pytest`, and
 `yara-python` (needed for YARA scanning).
 
-capa and FLOSS are separate CLIs, not Python dependencies, watson shells
-out to whichever of them is on `PATH`.
+capa, FLOSS, and StringSifter's `rank_strings` are separate CLIs, not
+Python dependencies, watson shells out to whichever of them is on `PATH`.
 
 ## Quick start
 
@@ -29,14 +29,14 @@ One-time (or whenever you want) setup:
 watson setup
 ```
 
-Walks through YARA, capa, FLOSS, and DIE, offering to fetch or install
-whatever isn't already available (a `git clone` for rule sets, a `pip
-install` for the capa/FLOSS CLIs, an official portable-build download for
-DIE on Windows), streaming the real fetch/install output as it happens,
-into caches under `~/.watson/`. Skip anything you don't want; `watson
-analyze` still works, it just reports that capability as unavailable.
-Non-interactive runs (scripts, CI, piped input) just report what's
-missing without fetching anything.
+Walks through YARA, capa, FLOSS, DIE, and StringSifter, offering to fetch
+or install whatever isn't already available (a `git clone` for rule sets,
+a `pip install` for the capa/FLOSS/StringSifter CLIs, an official
+portable-build download for DIE on Windows), streaming the real
+fetch/install output as it happens, into caches under `~/.watson/`. Skip
+anything you don't want; `watson analyze` still works, it just reports
+that capability as unavailable. Non-interactive runs (scripts, CI, piped
+input) just report what's missing without fetching anything.
 
 Then, for each file (or a whole directory of files, analyzed recursively
 one by one):
@@ -54,6 +54,7 @@ which analyses do you want to run?
   c  capa capability / ATT&CK / MBC detection
   f  FLOSS string extraction and IOC flagging
   d  Detect It Easy packer/compiler/linker detection
+  r  StringSifter relevance ranking of extracted strings
   a  all of the above
   n  none
 type the letters you want (e.g. "yc"), or leave blank for none:
@@ -73,7 +74,7 @@ today.
 
 ```
 watson setup
-watson analyze <file-or-directory> [-o DIR] [-y DIR] [-c DIR] [-s DIR] [-f] [-d] [-v]
+watson analyze <file-or-directory> [-o DIR] [-y DIR] [-c DIR] [-s DIR] [-f] [-d] [-r] [-v]
 ```
 
 `watson setup` takes no flags: it checks every optional tool and offers
@@ -127,6 +128,12 @@ what you want you never have to go through a prompt again:
   https://github.com/horsicq/Detect-It-Easy). `watson analyze -d` itself
   only checks whether `diec` is already available, it never fetches or
   installs. Omit to be asked interactively.
+- `-r`, `--rank-strings`, rank FLOSS's extracted strings by relevance
+  using StringSifter's real ML model (needs `-f`/`--floss` to have also
+  run; without it, reported unavailable with a clear reason). The top 20
+  ranked strings appear in the report, the complete ranking goes to
+  `<out>/<timestamp>-<name>-<md5>_ranked_strings.json`. Omit to be asked
+  interactively.
 - `-v`, `--verbose`, show full YARA match detail (string identifier, hex
   offset, matched bytes) and capa match evidence (the specific feature,
   e.g. an API call, and the address it matched at) in the text report.
@@ -153,6 +160,22 @@ a known, structurally-unavoidable false positive, and a handful of
 well-known X.509/ASN.1 OID arcs are explicitly excluded since they'd
 otherwise dominate the "ip" category in any binary that touches
 certificates or crypto.
+
+### String ranking (`-r`/`--rank-strings`)
+
+StringSifter is Mandiant's real ML-based string relevance ranker (a small
+LightGBM model trained on human-labeled interesting/junk strings), run as
+an optional extra pass over FLOSS's output rather than a replacement for
+the regex-based IOC flagging above: the two catch different things. IOC
+flagging only recognizes known shapes (an IP, a URL, a registry key);
+StringSifter's ranking surfaces strings that look relevant for a different
+reason entirely (a suspicious command line, a mutex name, a ransom note)
+without needing to match a fixed pattern. The report shows the top 20
+ranked strings (score plus source); the complete ranking of every string
+FLOSS extracted is written to
+`<out>/<timestamp>-<name>-<md5>_ranked_strings.json`. Needs FLOSS to have
+also run; picking `-r` without `-f` reports it unavailable with a clear
+reason instead of silently doing nothing.
 
 ### Report layout
 
@@ -254,10 +277,10 @@ run-level error.
 Built so far: hashing (md5/sha1/sha256/imphash), PE metadata (sections,
 imports, timestamp, digital signature presence, packed-likely heuristic),
 YARA scanning, capa capability/ATT&CK/MBC analysis, FLOSS string
-extraction with IOC-pattern flagging, a heuristic type/risk
-classification, and Detect It Easy file type/compiler/packer detection,
-all wired through `watson analyze` (including batch/directory mode), with
-`watson setup` handling
+extraction with IOC-pattern flagging, StringSifter relevance ranking of
+extracted strings, a heuristic type/risk classification, and Detect It
+Easy file type/compiler/packer detection, all wired through `watson
+analyze` (including batch/directory mode), with `watson setup` handling
 interactive fetch/install for every optional rule set or tool.
 
 Known limitations in what's built so far:
