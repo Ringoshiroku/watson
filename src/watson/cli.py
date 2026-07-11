@@ -11,6 +11,7 @@ from watson.capa_scan import CapaScanError, scan_file as capa_scan_file
 from watson.die_scan import DieScanError, scan_file as die_scan_file
 from watson.floss_scan import FlossScanError, flatten_strings, save_raw_output, scan_file as floss_scan_file
 from watson.hashing import compute_hashes
+from watson.stringsifter_scan import StringSifterError, rank_strings, save_ranked_strings
 from watson.classification import classify
 from watson.ioc_strings import find_interesting_strings
 from watson.pe_metadata import InvalidPEError, extract_pe_metadata
@@ -47,6 +48,7 @@ CAPABILITY_OPTIONS = [
     ("c", "capa capability / ATT&CK / MBC detection"),
     ("f", "FLOSS string extraction and IOC flagging"),
     ("d", "Detect It Easy packer/compiler/linker detection"),
+    ("r", "StringSifter relevance ranking of extracted strings"),
 ]
 
 
@@ -136,6 +138,11 @@ def _resolve_die(offline: bool) -> tuple[dict, str | None]:
     return {"available": False, "reason": _die_install_hint()}, None
 
 
+def _resolve_stringsifter(offline: bool) -> dict:
+    stringsifter_status = find_binary("rank_strings", pip_package="stringsifter", offline=offline)
+    return {"available": stringsifter_status.available, "reason": stringsifter_status.reason}
+
+
 def _resolve_capability_selection(
     rules_dir: Path | None,
     capa_rules_dir: Path | None,
@@ -143,6 +150,7 @@ def _resolve_capability_selection(
     run_die: bool | None,
     run_yara: bool | None,
     run_capa: bool | None,
+    run_rank: bool | None,
     subject: str,
 ) -> tuple:
     attempt_yara = True if run_yara is None else run_yara
@@ -160,6 +168,7 @@ def _resolve_capability_selection(
         and run_die is None
         and run_yara is None
         and run_capa is None
+        and run_rank is None
         and tool_discovery.is_interactive()
     ):
         print("anything not yet installed will be skipped; run 'watson setup' first to install it")
@@ -168,6 +177,7 @@ def _resolve_capability_selection(
         attempt_capa = "c" in selection.keys
         run_floss = "f" in selection.keys
         run_die = "d" in selection.keys
+        run_rank = "r" in selection.keys
         forced_verbose = selection.via_all_shorthand
 
     if run_floss is None:
@@ -180,7 +190,12 @@ def _resolve_capability_selection(
             f"run Detect It Easy packer/compiler/linker detection on {subject}?"
         )
 
-    return attempt_yara, attempt_capa, run_floss, run_die, forced_verbose
+    if run_rank is None:
+        run_rank = confirm(
+            f"rank extracted strings by relevance on {subject} using StringSifter?"
+        )
+
+    return attempt_yara, attempt_capa, run_floss, run_die, run_rank, forced_verbose
 
 
 def build_case(
@@ -192,6 +207,7 @@ def build_case(
     run_die: bool | None = None,
     run_yara: bool | None = None,
     run_capa: bool | None = None,
+    run_rank: bool | None = None,
 ) -> tuple:
     hashes = compute_hashes(file_path)
     metadata = extract_pe_metadata(file_path)
@@ -213,8 +229,8 @@ def build_case(
         likely_packed=metadata["likely_packed"],
     )
 
-    attempt_yara, attempt_capa, run_floss, run_die, forced_verbose = _resolve_capability_selection(
-        rules_dir, capa_rules_dir, run_floss, run_die, run_yara, run_capa, file_path.name
+    attempt_yara, attempt_capa, run_floss, run_die, run_rank, forced_verbose = _resolve_capability_selection(
+        rules_dir, capa_rules_dir, run_floss, run_die, run_yara, run_capa, run_rank, file_path.name
     )
 
     tools = {}
@@ -273,6 +289,32 @@ def build_case(
             "reason": "floss not requested (use --floss)",
         }
 
+    ranked_strings_full = None
+
+    if run_rank:
+        if floss_raw is None:
+            tools["stringsifter"] = {
+                "available": False,
+                "reason": "floss did not run (string ranking needs FLOSS's output)",
+            }
+        else:
+            tools["stringsifter"] = _resolve_stringsifter(offline=True)
+            if tools["stringsifter"]["available"]:
+                try:
+                    with progress.stage("StringSifter ranking"):
+                        ranked_strings_full = rank_strings(flatten_strings(floss_raw))
+                except StringSifterError as exc:
+                    tools["stringsifter"] = {
+                        "available": False,
+                        "reason": f"stringsifter ranking failed: {exc}",
+                    }
+                    ranked_strings_full = None
+    else:
+        tools["stringsifter"] = {
+            "available": False,
+            "reason": "stringsifter not requested (use --rank-strings)",
+        }
+
     die_detections = []
 
     if run_die:
@@ -302,8 +344,9 @@ def build_case(
         interesting_strings=interesting_strings,
         classification=classification,
         die_detections=die_detections,
+        ranked_strings=(ranked_strings_full or [])[:20],
     )
-    return Case(identity=identity, static=static), floss_raw, forced_verbose
+    return Case(identity=identity, static=static), floss_raw, forced_verbose, ranked_strings_full
 
 
 def main(argv: list | None = None) -> int:
@@ -366,6 +409,17 @@ def main(argv: list | None = None) -> int:
         ),
     )
     analyze_parser.add_argument(
+        "-r",
+        "--rank-strings",
+        action="store_true",
+        default=None,
+        help=(
+            "Rank FLOSS's extracted strings by relevance using StringSifter (needs --floss to "
+            "have run; the top 20 appear in the report, the complete ranking is written to "
+            "<out>/<basename>_ranked_strings.json). Omit to be asked interactively."
+        ),
+    )
+    analyze_parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -386,6 +440,7 @@ def main(argv: list | None = None) -> int:
             args.capa_sigs_dir,
             args.floss,
             args.diec,
+            args.rank_strings,
             args.verbose,
         )
 
@@ -414,6 +469,7 @@ def _run_setup() -> int:
     tools["capa"], _, _ = _resolve_capa(None, None, offline=False)
     tools["floss"] = _resolve_floss(offline=False)
     tools["diec"], _ = _resolve_die(offline=False)
+    tools["stringsifter"] = _resolve_stringsifter(offline=False)
 
     print()
     print("Summary")
@@ -438,11 +494,20 @@ def _run_analyze(
     capa_sigs_dir: Path | None,
     run_floss: bool | None,
     run_die: bool | None,
+    run_rank: bool | None,
     verbose: bool,
 ) -> int:
     if file_path.is_dir():
         return _run_batch(
-            file_path, out_dir, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die, verbose
+            file_path,
+            out_dir,
+            rules_dir,
+            capa_rules_dir,
+            capa_sigs_dir,
+            run_floss,
+            run_die,
+            run_rank,
+            verbose,
         )
 
     if not file_path.is_file():
@@ -452,8 +517,8 @@ def _run_analyze(
     out_dir = _resolve_out_dir(out_dir)
 
     try:
-        case, floss_raw, forced_verbose = build_case(
-            file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die
+        case, floss_raw, forced_verbose, ranked_strings_full = build_case(
+            file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die, run_rank=run_rank
         )
     except InvalidPEError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -464,6 +529,8 @@ def _run_analyze(
     now = datetime.now()
     if floss_raw is not None:
         save_raw_output(floss_raw, out_dir, case.output_basename(now))
+    if ranked_strings_full is not None:
+        save_ranked_strings(ranked_strings_full, out_dir, case.output_basename(now))
 
     text_report = build_text_report(case, verbose=effective_verbose)
     case.save(out_dir, now, data=build_json_report(case), text_report=text_report)
@@ -496,13 +563,14 @@ def _run_batch(
     capa_sigs_dir: Path | None,
     run_floss: bool | None,
     run_die: bool | None,
+    run_rank: bool | None,
     verbose: bool,
 ) -> int:
     out_dir = _resolve_out_dir(out_dir)
     files = sorted(path for path in dir_path.rglob("*") if path.is_file())
 
-    attempt_yara, attempt_capa, run_floss, run_die, forced_verbose = _resolve_capability_selection(
-        rules_dir, capa_rules_dir, run_floss, run_die, None, None, "this batch"
+    attempt_yara, attempt_capa, run_floss, run_die, run_rank, forced_verbose = _resolve_capability_selection(
+        rules_dir, capa_rules_dir, run_floss, run_die, None, None, run_rank, "this batch"
     )
     effective_verbose = verbose or forced_verbose
 
@@ -513,7 +581,7 @@ def _run_batch(
 
     for index, file_path in enumerate(files, start=1):
         try:
-            case, floss_raw, _ = build_case(
+            case, floss_raw, _, ranked_strings_full = build_case(
                 file_path,
                 rules_dir,
                 capa_rules_dir,
@@ -522,6 +590,7 @@ def _run_batch(
                 run_die,
                 attempt_yara,
                 attempt_capa,
+                run_rank,
             )
         except InvalidPEError:
             skipped += 1
@@ -537,6 +606,8 @@ def _run_batch(
         now = datetime.now()
         if floss_raw is not None:
             save_raw_output(floss_raw, out_dir, case.output_basename(now))
+        if ranked_strings_full is not None:
+            save_ranked_strings(ranked_strings_full, out_dir, case.output_basename(now))
 
         text_report = build_text_report(case, verbose=effective_verbose)
         case.save(out_dir, now, data=build_json_report(case), text_report=text_report)
