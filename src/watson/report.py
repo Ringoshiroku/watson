@@ -147,6 +147,16 @@ def _render_summary_lines(summary: dict) -> list:
     return lines
 
 
+def _render_ranked_strings_lines(ranked_strings: list) -> list:
+    lines = ["Ranked Strings", "-" * 14]
+    if not ranked_strings:
+        lines.append("  none")
+        return lines
+    for entry in ranked_strings:
+        lines.append(f"  {entry['score']:.2f}  {entry['string']} ({entry['source']})")
+    return lines
+
+
 def build_text_report(case: Case, verbose: bool = False) -> str:
     lines = []
     lines.append("=" * 30)
@@ -250,5 +260,8 @@ def build_text_report(case: Case, verbose: bool = False) -> str:
                 lines.append(f"  {finding['string']} ({finding['source']})")
     else:
         lines.append("  none")
+
+    lines.append("")
+    lines.extend(_render_ranked_strings_lines(case.static.ranked_strings))
 
     return "\n".join(lines)
