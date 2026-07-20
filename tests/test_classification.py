@@ -433,6 +433,41 @@ def test_classify_detection_string_uses_win32_for_x86_machine():
     assert result["detection"] == "Ransomware:Win32/CryptoImpact.yara"
 
 
+def test_classify_detection_string_uses_linux_for_elf_format():
+    yara_matches = [{"rule": "generic_ransomware_dropper", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches,
+        capabilities=[],
+        likely_packed=False,
+        tools={},
+        machine="EM_X86_64",
+        file_format="elf",
+    )
+
+    assert result["detection"] == "Ransomware:Linux/CryptoImpact.yara"
+
+
+def test_classify_detection_string_defaults_to_pe_platform_when_file_format_omitted():
+    capabilities = [
+        {
+            "rule": "encrypt files",
+            "namespace": "data-manipulation/encryption",
+            "attack": [],
+            "mbc": [
+                {"parts": ["Cryptography", "Encrypt Data"], "objective": "Cryptography", "id": "C0027"},
+                {"parts": ["Impact", "Data Encrypted"], "objective": "Impact", "id": "F0002"},
+            ],
+        }
+    ]
+
+    result = classify(
+        yara_matches=[], capabilities=capabilities, likely_packed=False, tools={}, machine="0x8664"
+    )
+
+    assert result["detection"] == "Ransomware:Win64/CryptoImpact.capa"
+
+
 def test_classify_detection_string_reports_capa_plus_yara_when_both_contribute():
     capabilities = [
         {
