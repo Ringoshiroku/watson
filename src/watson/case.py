@@ -40,8 +40,24 @@ class PEMetadata:
 
 
 @dataclass
+class ELFMetadata:
+    machine: str
+    machine_name: str
+    entry_point: str
+    interpreter: Optional[str]
+    is_pie: bool
+    is_stripped: bool
+    sections: list
+    needed_libraries: list
+    dynamic_symbols: list
+    likely_packed: bool = False
+    has_digital_signature: bool = False
+
+
+@dataclass
 class StaticSection:
-    pe_metadata: PEMetadata
+    pe_metadata: Optional[PEMetadata] = None
+    elf_metadata: Optional[ELFMetadata] = None
     yara_matches: list = field(default_factory=list)
     tools: dict = field(default_factory=dict)
     capabilities: list = field(default_factory=list)
@@ -63,9 +79,13 @@ class Case:
     def from_dict(cls, data: dict) -> "Case":
         identity = Identity(**data["identity"])
         static_data = data["static"]
-        pe_metadata = PEMetadata(**static_data["pe_metadata"])
+        pe_metadata_data = static_data.get("pe_metadata")
+        pe_metadata = PEMetadata(**pe_metadata_data) if pe_metadata_data else None
+        elf_metadata_data = static_data.get("elf_metadata")
+        elf_metadata = ELFMetadata(**elf_metadata_data) if elf_metadata_data else None
         static = StaticSection(
             pe_metadata=pe_metadata,
+            elf_metadata=elf_metadata,
             yara_matches=static_data.get("yara_matches", []),
             tools=static_data.get("tools", {}),
             capabilities=static_data.get("capabilities", []),

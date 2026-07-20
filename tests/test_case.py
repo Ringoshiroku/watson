@@ -1,6 +1,6 @@
 import json
 
-from watson.case import Case, Identity, PEMetadata, StaticSection
+from watson.case import Case, ELFMetadata, Identity, PEMetadata, StaticSection
 
 
 def _sample_case() -> Case:
@@ -569,3 +569,67 @@ def test_case_load_tolerates_json_missing_ranked_strings_field(tmp_path):
     loaded = Case.load(case_path)
 
     assert loaded.static.ranked_strings == []
+
+
+def _sample_elf_case() -> Case:
+    identity = Identity(
+        sha256="a" * 64,
+        sha1="b" * 40,
+        md5="c" * 32,
+        imphash=None,
+        file_name="sample.elf",
+    )
+    elf_metadata = ELFMetadata(
+        machine="EM_X86_64",
+        machine_name="x64 (AMD64)",
+        entry_point="0x1050",
+        interpreter="/lib64/ld-linux-x86-64.so.2",
+        is_pie=True,
+        is_stripped=False,
+        sections=[
+            {"name": ".text", "virtual_size": 4096, "raw_size": 4096, "entropy": 6.1234},
+        ],
+        needed_libraries=["libc.so.6"],
+        dynamic_symbols=["puts"],
+    )
+    return Case(identity=identity, static=StaticSection(elf_metadata=elf_metadata))
+
+
+def test_case_round_trips_elf_metadata():
+    case = _sample_elf_case()
+
+    data = case.to_dict()
+    restored = Case.from_dict(data)
+
+    assert restored.static.pe_metadata is None
+    assert restored.static.elf_metadata.machine == "EM_X86_64"
+    assert restored.static.elf_metadata.needed_libraries == ["libc.so.6"]
+    assert restored.static.elf_metadata.dynamic_symbols == ["puts"]
+
+
+def test_case_load_tolerates_pe_only_json_missing_elf_metadata(tmp_path):
+    old_format_data = {
+        "identity": {
+            "sha256": "a" * 64,
+            "sha1": "b" * 40,
+            "md5": "c" * 32,
+            "imphash": "d" * 32,
+            "file_name": "sample.exe",
+        },
+        "static": {
+            "pe_metadata": {
+                "machine": "0x8664",
+                "compile_timestamp": None,
+                "sections": [],
+                "imports": {},
+                "has_digital_signature": False,
+            }
+        },
+    }
+    case_path = tmp_path / (("a" * 64) + ".json")
+    case_path.write_text(json.dumps(old_format_data))
+
+    loaded = Case.load(case_path)
+
+    assert loaded.static.pe_metadata.machine == "0x8664"
+    assert loaded.static.elf_metadata is None

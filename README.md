@@ -85,7 +85,7 @@ what's already there; run `watson setup` first for anything you want
 available. Every flag below has a short and a long form, so once you know
 what you want you never have to go through a prompt again:
 
-- `<file-or-directory>`, the PE file to analyze, or a directory to
+- `<file-or-directory>`, the PE or ELF file to analyze, or a directory to
   recursively analyze every file inside. For a directory, every prompt
   below (which analyses to run, output directory) is asked once and reused
   for every file in the batch; each file still gets its own JSON case and
@@ -240,7 +240,7 @@ observed.
 
 Pass a directory instead of a single file and watson recursively analyzes
 every file inside it (any depth, sorted for a deterministic order), one at
-a time. Non-PE files are skipped quietly and counted, not treated as an
+a time. Files that are neither PE nor ELF are skipped quietly and counted, not treated as an
 error. Any capability-selection or output-directory prompt that would
 normally show once per file is asked exactly once, up front, and the same
 answer is reused for every file in the batch, so a large batch doesn't turn
@@ -258,7 +258,7 @@ Batch summary
 -------------
 scanned: 50 files
   analyzed: 42
-  skipped (not a valid PE): 6
+  skipped (not a valid PE or ELF): 6
   failed: 2
 
 Failed:
@@ -276,16 +276,26 @@ run-level error.
 
 Built so far: hashing (md5/sha1/sha256/imphash), PE metadata (sections,
 imports, timestamp, digital signature presence, packed-likely heuristic),
-YARA scanning, capa capability/ATT&CK/MBC analysis, FLOSS string
-extraction with IOC-pattern flagging, StringSifter relevance ranking of
-extracted strings, a heuristic type/risk classification, and Detect It
-Easy file type/compiler/packer detection, all wired through `watson
-analyze` (including batch/directory mode), with `watson setup` handling
-interactive fetch/install for every optional rule set or tool.
+ELF metadata (sections, needed libraries, dynamic symbols, interpreter,
+PIE/stripped flags, packed-likely heuristic), YARA scanning, capa
+capability/ATT&CK/MBC analysis, FLOSS string extraction with IOC-pattern
+flagging, StringSifter relevance ranking of extracted strings, a
+heuristic type/risk classification, and Detect It Easy file
+type/compiler/packer detection, all wired through `watson analyze`
+(including batch/directory mode, which now handles a mix of PE and ELF
+files in the same run), with `watson setup` handling interactive
+fetch/install for every optional rule set or tool.
 
 Known limitations in what's built so far:
 - Digital signature check is presence-only, not validity, signer, or
-  trust chain.
+  trust chain. For ELF, this only detects the Linux kernel module
+  signing facility's trailer (relevant to `.ko` files); regular userspace
+  ELF binaries are essentially never signed this way, since distros sign
+  packages, not individual binaries, so a `False` reading there is
+  expected, not a gap.
+- No imphash equivalent for ELF samples (`Identity.imphash` is always
+  `None` for them); the community-standard analog, telfhash, isn't
+  implemented yet.
 - IOC flagging is regex-based; see "IOC flagging" above for its known
   false-positive shape.
 

@@ -284,7 +284,9 @@ def _reasoning(
     return reasoning
 
 
-def _platform(machine: str) -> str:
+def _platform(machine: str, file_format: str = "pe") -> str:
+    if file_format == "elf":
+        return "Linux"
     try:
         code = int(machine, 16)
     except (TypeError, ValueError):
@@ -302,7 +304,9 @@ def _detection_source(yara_hit, capa_rules: list) -> str:
     return "capa"
 
 
-def _detection(verdict: str, yara_matches: list, capabilities: list, machine: str) -> Optional[str]:
+def _detection(
+    verdict: str, yara_matches: list, capabilities: list, machine: str, file_format: str = "pe"
+) -> Optional[str]:
     if verdict == "unclassified":
         return None
 
@@ -339,14 +343,19 @@ def _detection(verdict: str, yara_matches: list, capabilities: list, machine: st
         signal = _VERDICT_SIGNAL["trojan"]
 
     source = _detection_source(yara_hit, capa_rules)
-    return f"{verdict.capitalize()}:{_platform(machine)}/{signal}.{source}"
+    return f"{verdict.capitalize()}:{_platform(machine, file_format)}/{signal}.{source}"
 
 
 def classify(
-    yara_matches: list, capabilities: list, likely_packed: bool, tools: dict, machine: str = ""
+    yara_matches: list,
+    capabilities: list,
+    likely_packed: bool,
+    tools: dict,
+    machine: str = "",
+    file_format: str = "pe",
 ) -> dict:
     verdict = _verdict(yara_matches, capabilities)
     risk = _risk(verdict, likely_packed)
     reasoning = _reasoning(verdict, yara_matches, capabilities, likely_packed, tools)
-    detection = _detection(verdict, yara_matches, capabilities, machine)
+    detection = _detection(verdict, yara_matches, capabilities, machine, file_format)
     return {"verdict": verdict, "risk": risk, "reasoning": reasoning, "detection": detection}
