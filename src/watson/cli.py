@@ -6,9 +6,11 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from watson.case import Case, Identity, PEMetadata, StaticSection
+from watson.case import Case, ELFMetadata, Identity, PEMetadata, StaticSection
 from watson.capa_scan import CapaScanError, scan_file as capa_scan_file
 from watson.die_scan import DieScanError, scan_file as die_scan_file
+from watson.elf_metadata import InvalidELFError, extract_elf_metadata
+from watson.file_format import UnsupportedFormatError, detect_format
 from watson.floss_scan import FlossScanError, flatten_strings, save_raw_output, scan_file as floss_scan_file
 from watson.hashing import compute_hashes
 from watson.stringsifter_scan import StringSifterError, rank_strings, save_ranked_strings
@@ -210,23 +212,51 @@ def build_case(
     run_rank: bool | None = None,
 ) -> tuple:
     hashes = compute_hashes(file_path)
-    metadata = extract_pe_metadata(file_path)
+    file_format = detect_format(file_path)
+
+    if file_format == "pe":
+        metadata = extract_pe_metadata(file_path)
+        pe_metadata = PEMetadata(
+            machine=metadata["machine"],
+            compile_timestamp=metadata["compile_timestamp"],
+            sections=metadata["sections"],
+            imports=metadata["imports"],
+            has_digital_signature=metadata["has_digital_signature"],
+            machine_name=metadata["machine_name"],
+            likely_packed=metadata["likely_packed"],
+        )
+        elf_metadata = None
+        imphash = metadata["imphash"]
+        machine_for_classification = pe_metadata.machine
+        likely_packed = pe_metadata.likely_packed
+    elif file_format == "elf":
+        metadata = extract_elf_metadata(file_path)
+        elf_metadata = ELFMetadata(
+            machine=metadata["machine"],
+            machine_name=metadata["machine_name"],
+            entry_point=metadata["entry_point"],
+            interpreter=metadata["interpreter"],
+            is_pie=metadata["is_pie"],
+            is_stripped=metadata["is_stripped"],
+            sections=metadata["sections"],
+            needed_libraries=metadata["needed_libraries"],
+            dynamic_symbols=metadata["dynamic_symbols"],
+            likely_packed=metadata["likely_packed"],
+            has_digital_signature=metadata["has_digital_signature"],
+        )
+        pe_metadata = None
+        imphash = None
+        machine_for_classification = elf_metadata.machine
+        likely_packed = elf_metadata.likely_packed
+    else:
+        raise UnsupportedFormatError(f"{file_path} is not a recognized PE or ELF file")
 
     identity = Identity(
         sha256=hashes["sha256"],
         sha1=hashes["sha1"],
         md5=hashes["md5"],
-        imphash=metadata["imphash"],
+        imphash=imphash,
         file_name=file_path.name,
-    )
-    pe_metadata = PEMetadata(
-        machine=metadata["machine"],
-        compile_timestamp=metadata["compile_timestamp"],
-        sections=metadata["sections"],
-        imports=metadata["imports"],
-        has_digital_signature=metadata["has_digital_signature"],
-        machine_name=metadata["machine_name"],
-        likely_packed=metadata["likely_packed"],
     )
 
     attempt_yara, attempt_capa, run_floss, run_die, run_rank, forced_verbose = _resolve_capability_selection(
@@ -333,11 +363,12 @@ def build_case(
         }
 
     classification = classify(
-        yara_matches, capabilities, pe_metadata.likely_packed, tools, pe_metadata.machine
+        yara_matches, capabilities, likely_packed, tools, machine_for_classification, file_format
     )
 
     static = StaticSection(
         pe_metadata=pe_metadata,
+        elf_metadata=elf_metadata,
         yara_matches=yara_matches,
         tools=tools,
         capabilities=capabilities,
@@ -353,11 +384,11 @@ def main(argv: list | None = None) -> int:
     parser = argparse.ArgumentParser(prog="watson")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    analyze_parser = subparsers.add_parser("analyze", help="Analyze a single PE file")
+    analyze_parser = subparsers.add_parser("analyze", help="Analyze a single PE or ELF file")
     analyze_parser.add_argument(
         "file",
         type=Path,
-        help="Path to a PE file, or a directory to recursively analyze every file inside",
+        help="Path to a PE or ELF file, or a directory to recursively analyze every file inside",
     )
     analyze_parser.add_argument(
         "-o",
@@ -520,7 +551,7 @@ def _run_analyze(
         case, floss_raw, forced_verbose, ranked_strings_full = build_case(
             file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die, run_rank=run_rank
         )
-    except InvalidPEError as exc:
+    except (InvalidPEError, InvalidELFError, UnsupportedFormatError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
@@ -544,7 +575,7 @@ def _build_batch_summary(total: int, analyzed: int, skipped: int, failed: list) 
         "-------------",
         f"scanned: {total} files",
         f"  analyzed: {analyzed}",
-        f"  skipped (not a valid PE): {skipped}",
+        f"  skipped (not a valid PE or ELF): {skipped}",
         f"  failed: {len(failed)}",
     ]
     if failed:
@@ -592,9 +623,9 @@ def _run_batch(
                 attempt_capa,
                 run_rank,
             )
-        except InvalidPEError:
+        except (InvalidPEError, InvalidELFError, UnsupportedFormatError):
             skipped += 1
-            print(f"[{index}/{total}] {file_path.name}: skipped (not a valid PE)", file=sys.stderr)
+            print(f"[{index}/{total}] {file_path.name}: skipped (not a valid PE or ELF)", file=sys.stderr)
             continue
         except Exception as exc:
             # a single file's tool crash or read failure shouldn't take the

@@ -37,15 +37,53 @@ def test_analyze_writes_case_and_prints_report(compiled_pe, tmp_path, capsys, mo
     assert case_data["identity"]["file_name"] == compiled_pe.name
 
 
-def test_analyze_rejects_non_pe_file(tmp_path, capsys):
-    bad_file = tmp_path / "not_a_pe.bin"
-    bad_file.write_bytes(b"not a pe file at all")
+def test_analyze_writes_case_for_elf_file(compiled_elf, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_elf), "--out", str(out_dir)])
+
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "ELF Metadata" in captured.out
+    assert compiled_elf.name in captured.out
+
+    case_files = list(out_dir.glob("*.json"))
+    assert len(case_files) == 1
+    case_data = json.loads(case_files[0].read_text())
+    assert case_data["static"]["elf_metadata"] is not None
+    assert case_data["static"]["pe_metadata"] is None
+
+
+def test_analyze_directory_handles_mixed_pe_and_elf_files(
+    compiled_pe, compiled_elf, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    samples_dir = tmp_path / "samples"
+    samples_dir.mkdir()
+    shutil.copy(compiled_pe, samples_dir / "one.exe")
+    shutil.copy(compiled_elf, samples_dir / "two.elf")
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(samples_dir), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "one.exe:" in captured.err
+    assert "two.elf:" in captured.err
+    assert "analyzed: 2" in captured.out
+
+
+def test_analyze_rejects_unrecognized_file_format(tmp_path, capsys):
+    bad_file = tmp_path / "not_a_pe_or_elf.bin"
+    bad_file.write_bytes(b"not a recognized binary at all")
 
     exit_code = main(["analyze", str(bad_file)])
 
     assert exit_code == 1
     captured = capsys.readouterr()
-    assert "not a valid PE file" in captured.err
+    assert "not a recognized PE or ELF file" in captured.err
 
 
 def test_analyze_rejects_missing_file(tmp_path, capsys):
@@ -936,9 +974,9 @@ def test_analyze_directory_skips_non_pe_files_and_continues(compiled_pe, tmp_pat
 
     assert exit_code == 0
     captured = capsys.readouterr()
-    assert "readme.txt: skipped (not a valid PE)" in captured.err
+    assert "readme.txt: skipped (not a valid PE or ELF)" in captured.err
     assert "one.exe:" in captured.err
-    assert "skipped (not a valid PE): 1" in captured.out
+    assert "skipped (not a valid PE or ELF): 1" in captured.out
     assert "analyzed: 1" in captured.out
 
     case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith("_floss.json")]
