@@ -1,4 +1,4 @@
-from watson.case import Case, Identity, PEMetadata, StaticSection
+from watson.case import Case, ELFMetadata, Identity, PEMetadata, StaticSection
 from watson.report import build_json_report, build_text_report
 
 
@@ -20,6 +20,60 @@ def _sample_case() -> Case:
         has_digital_signature=False,
     )
     return Case(identity=identity, static=StaticSection(pe_metadata=pe_metadata))
+
+
+def _sample_elf_case() -> Case:
+    identity = Identity(
+        sha256="a" * 64,
+        sha1="b" * 40,
+        md5="c" * 32,
+        imphash=None,
+        file_name="sample.elf",
+    )
+    elf_metadata = ELFMetadata(
+        machine="EM_X86_64",
+        machine_name="x64 (AMD64)",
+        entry_point="0x1050",
+        interpreter="/lib64/ld-linux-x86-64.so.2",
+        is_pie=True,
+        is_stripped=False,
+        sections=[
+            {"name": ".text", "virtual_size": 4096, "raw_size": 4096, "entropy": 6.1234},
+        ],
+        needed_libraries=["libc.so.6"],
+        dynamic_symbols=["puts"],
+    )
+    return Case(identity=identity, static=StaticSection(elf_metadata=elf_metadata))
+
+
+def test_build_text_report_renders_elf_metadata_section():
+    case = _sample_elf_case()
+
+    report = build_text_report(case)
+
+    assert "sample.elf" in report
+    assert "ELF Metadata" in report
+    assert "Machine: EM_X86_64 (x64 (AMD64))" in report
+    assert "Entry Point: 0x1050" in report
+    assert "Interpreter: /lib64/ld-linux-x86-64.so.2" in report
+    assert "PIE: True" in report
+    assert "Stripped: False" in report
+    assert ".text" in report
+    assert "Needed Libraries" in report
+    assert "  libc.so.6" in report
+    assert "Dynamic Symbols" in report
+    assert "  puts" in report
+    assert "PE Metadata" not in report
+    assert "Imports" not in report
+
+
+def test_build_json_report_round_trips_elf_case_data():
+    case = _sample_elf_case()
+
+    report = build_json_report(case)
+
+    assert report["static"]["elf_metadata"]["machine"] == "EM_X86_64"
+    assert report["static"]["pe_metadata"] is None
 
 
 def test_build_json_report_round_trips_case_data():

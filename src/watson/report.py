@@ -42,6 +42,66 @@ def _render_die_lines(die_detections: list) -> list:
     return lines
 
 
+def _render_pe_metadata_lines(pe) -> list:
+    lines = ["PE Metadata", "-" * 11]
+    machine = f"{pe.machine} ({pe.machine_name})" if pe.machine_name else pe.machine
+    lines.append(f"Machine: {machine}")
+    lines.append(f"Compile Timestamp: {pe.compile_timestamp or 'N/A'}")
+    lines.append(f"Digital Signature Present: {pe.has_digital_signature}")
+    lines.append(f"Likely Packed: {pe.likely_packed}")
+    return lines
+
+
+def _render_elf_metadata_lines(elf) -> list:
+    lines = ["ELF Metadata", "-" * 12]
+    machine = f"{elf.machine} ({elf.machine_name})" if elf.machine_name else elf.machine
+    lines.append(f"Machine: {machine}")
+    lines.append(f"Entry Point: {elf.entry_point}")
+    lines.append(f"Interpreter: {elf.interpreter or 'N/A (statically linked)'}")
+    lines.append(f"PIE: {elf.is_pie}")
+    lines.append(f"Stripped: {elf.is_stripped}")
+    lines.append(f"Digital Signature Present: {elf.has_digital_signature}")
+    lines.append(f"Likely Packed: {elf.likely_packed}")
+    return lines
+
+
+def _render_sections_lines(sections: list) -> list:
+    lines = ["Sections", "-" * 8]
+    for section in sections:
+        lines.append(
+            f"  {section['name']:<10} virtual_size={section['virtual_size']:<8} "
+            f"raw_size={section['raw_size']:<8} entropy={section['entropy']}"
+        )
+    return lines
+
+
+def _render_imports_lines(imports: dict) -> list:
+    lines = ["Imports", "-" * 7]
+    for dll, functions in imports.items():
+        lines.append(f"  {dll} ({len(functions)} functions)")
+    return lines
+
+
+def _render_needed_libraries_lines(needed_libraries: list) -> list:
+    lines = ["Needed Libraries", "-" * 16]
+    if not needed_libraries:
+        lines.append("  none (statically linked)")
+        return lines
+    for library in needed_libraries:
+        lines.append(f"  {library}")
+    return lines
+
+
+def _render_dynamic_symbols_lines(dynamic_symbols: list) -> list:
+    lines = ["Dynamic Symbols", "-" * 15]
+    if not dynamic_symbols:
+        lines.append("  none")
+        return lines
+    for symbol in dynamic_symbols:
+        lines.append(f"  {symbol}")
+    return lines
+
+
 def _format_mapping_entry(entry) -> str:
     if isinstance(entry, str):
         return entry
@@ -176,29 +236,26 @@ def build_text_report(case: Case, verbose: bool = False) -> str:
     lines.append(f"SHA256:  {case.identity.sha256}")
     lines.append(f"Imphash: {case.identity.imphash or 'N/A'}")
     lines.append("")
-    lines.append("PE Metadata")
-    lines.append("-" * 11)
     pe = case.static.pe_metadata
-    machine = f"{pe.machine} ({pe.machine_name})" if pe.machine_name else pe.machine
-    lines.append(f"Machine: {machine}")
-    lines.append(f"Compile Timestamp: {pe.compile_timestamp or 'N/A'}")
-    lines.append(f"Digital Signature Present: {pe.has_digital_signature}")
-    lines.append(f"Likely Packed: {pe.likely_packed}")
-    lines.append("")
-    lines.extend(_render_die_lines(case.static.die_detections))
-    lines.append("")
-    lines.append("Sections")
-    lines.append("-" * 8)
-    for section in pe.sections:
-        lines.append(
-            f"  {section['name']:<10} virtual_size={section['virtual_size']:<8} "
-            f"raw_size={section['raw_size']:<8} entropy={section['entropy']}"
-        )
-    lines.append("")
-    lines.append("Imports")
-    lines.append("-" * 7)
-    for dll, functions in pe.imports.items():
-        lines.append(f"  {dll} ({len(functions)} functions)")
+    elf = case.static.elf_metadata
+    if pe is not None:
+        lines.extend(_render_pe_metadata_lines(pe))
+        lines.append("")
+        lines.extend(_render_die_lines(case.static.die_detections))
+        lines.append("")
+        lines.extend(_render_sections_lines(pe.sections))
+        lines.append("")
+        lines.extend(_render_imports_lines(pe.imports))
+    else:
+        lines.extend(_render_elf_metadata_lines(elf))
+        lines.append("")
+        lines.extend(_render_die_lines(case.static.die_detections))
+        lines.append("")
+        lines.extend(_render_sections_lines(elf.sections))
+        lines.append("")
+        lines.extend(_render_needed_libraries_lines(elf.needed_libraries))
+        lines.append("")
+        lines.extend(_render_dynamic_symbols_lines(elf.dynamic_symbols))
 
     lines.append("")
     lines.extend(_render_summary_lines(_build_summary(case)))
