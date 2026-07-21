@@ -293,6 +293,68 @@ def test_classify_packing_bump_adds_reasoning_line():
     assert "risk raised one tier because the sample is likely packed" in result["reasoning"]
 
 
+def test_classify_unsigned_sample_bumps_risk_tier_up_one_step():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches, capabilities=[], likely_packed=False, tools={}, is_unsigned=True
+    )
+
+    assert result["risk"] == "medium"
+
+
+def test_classify_unsigned_and_packed_stack_two_tiers():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches, capabilities=[], likely_packed=True, tools={}, is_unsigned=True
+    )
+
+    assert result["risk"] == "high"
+
+
+def test_classify_unsigned_bump_caps_at_high():
+    yara_matches = [{"rule": "generic_ransomware_dropper", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches, capabilities=[], likely_packed=False, tools={}, is_unsigned=True
+    )
+
+    assert result["risk"] == "high"
+
+
+def test_classify_unsigned_with_no_other_evidence_stays_unclassified_low_risk():
+    tools = {"yara": {"available": True, "reason": None}, "capa": {"available": True, "reason": None}}
+
+    result = classify(
+        yara_matches=[], capabilities=[], likely_packed=False, tools=tools, is_unsigned=True
+    )
+
+    assert result["verdict"] == "unclassified"
+    assert result["risk"] == "low"
+
+
+def test_classify_unsigned_bump_adds_reasoning_line():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches, capabilities=[], likely_packed=False, tools={}, is_unsigned=True
+    )
+
+    assert "risk raised one tier because the sample is unsigned" in result["reasoning"]
+
+
+def test_classify_packed_and_unsigned_reasoning_lines_both_present():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches, capabilities=[], likely_packed=True, tools={}, is_unsigned=True
+    )
+
+    assert "risk raised one tier because the sample is likely packed" in result["reasoning"]
+    assert "risk raised one tier because the sample is unsigned" in result["reasoning"]
+
+
 def test_classify_unclassified_reasoning_when_both_tools_ran_and_found_nothing():
     tools = {
         "yara": {"available": True, "reason": None},

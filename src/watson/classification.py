@@ -138,10 +138,15 @@ def _verdict(yara_matches: list, capabilities: list) -> str:
     return "unclassified"
 
 
-def _risk(verdict: str, likely_packed: bool) -> str:
+def _risk(verdict: str, likely_packed: bool, is_unsigned: bool = False) -> str:
     tier = _RISK_BY_VERDICT[verdict]
+    bumps = 0
     if likely_packed:
-        index = min(_RISK_ORDER.index(tier) + 1, len(_RISK_ORDER) - 1)
+        bumps += 1
+    if is_unsigned and verdict != "unclassified":
+        bumps += 1
+    if bumps:
+        index = min(_RISK_ORDER.index(tier) + bumps, len(_RISK_ORDER) - 1)
         tier = _RISK_ORDER[index]
     return tier
 
@@ -184,7 +189,12 @@ def _yara_reasoning_line(yara_hit: dict) -> str:
 
 
 def _reasoning(
-    verdict: str, yara_matches: list, capabilities: list, likely_packed: bool, tools: dict
+    verdict: str,
+    yara_matches: list,
+    capabilities: list,
+    likely_packed: bool,
+    tools: dict,
+    is_unsigned: bool = False,
 ) -> list:
     reasoning = []
 
@@ -281,6 +291,9 @@ def _reasoning(
     if likely_packed:
         reasoning.append("risk raised one tier because the sample is likely packed")
 
+    if is_unsigned:
+        reasoning.append("risk raised one tier because the sample is unsigned")
+
     return reasoning
 
 
@@ -353,9 +366,10 @@ def classify(
     tools: dict,
     machine: str = "",
     file_format: str = "pe",
+    is_unsigned: bool = False,
 ) -> dict:
     verdict = _verdict(yara_matches, capabilities)
-    risk = _risk(verdict, likely_packed)
-    reasoning = _reasoning(verdict, yara_matches, capabilities, likely_packed, tools)
+    risk = _risk(verdict, likely_packed, is_unsigned)
+    reasoning = _reasoning(verdict, yara_matches, capabilities, likely_packed, tools, is_unsigned)
     detection = _detection(verdict, yara_matches, capabilities, machine, file_format)
     return {"verdict": verdict, "risk": risk, "reasoning": reasoning, "detection": detection}

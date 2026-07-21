@@ -229,6 +229,7 @@ def build_case(
         imphash = metadata["imphash"]
         machine_for_classification = pe_metadata.machine
         likely_packed = pe_metadata.likely_packed
+        is_unsigned = not pe_metadata.has_digital_signature
     elif file_format == "elf":
         metadata = extract_elf_metadata(file_path)
         elf_metadata = ELFMetadata(
@@ -248,6 +249,7 @@ def build_case(
         imphash = None
         machine_for_classification = elf_metadata.machine
         likely_packed = elf_metadata.likely_packed
+        is_unsigned = False
     else:
         raise UnsupportedFormatError(f"{file_path} is not a recognized PE or ELF file")
 
@@ -363,7 +365,13 @@ def build_case(
         }
 
     classification = classify(
-        yara_matches, capabilities, likely_packed, tools, machine_for_classification, file_format
+        yara_matches,
+        capabilities,
+        likely_packed,
+        tools,
+        machine_for_classification,
+        file_format,
+        is_unsigned=is_unsigned,
     )
 
     static = StaticSection(
