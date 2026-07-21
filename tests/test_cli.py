@@ -868,6 +868,50 @@ def test_build_case_respects_explicit_run_yara_and_run_capa_false(compiled_pe, m
     assert ranked_strings_full is None
 
 
+def test_build_case_passes_is_unsigned_true_for_unsigned_pe(compiled_pe, monkeypatch):
+    captured_kwargs = {}
+    real_classify = watson.cli.classify
+
+    def recording_classify(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return real_classify(*args, **kwargs)
+
+    monkeypatch.setattr("watson.cli.classify", recording_classify)
+
+    build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=False,
+        run_rank=False,
+    )
+
+    assert captured_kwargs["is_unsigned"] is True
+
+
+def test_build_case_passes_is_unsigned_false_for_elf(compiled_elf, monkeypatch):
+    captured_kwargs = {}
+    real_classify = watson.cli.classify
+
+    def recording_classify(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return real_classify(*args, **kwargs)
+
+    monkeypatch.setattr("watson.cli.classify", recording_classify)
+
+    build_case(
+        compiled_elf,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=False,
+        run_rank=False,
+    )
+
+    assert captured_kwargs["is_unsigned"] is False
+
+
 def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_rank_once_each(
     compiled_pe, monkeypatch
 ):
