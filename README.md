@@ -214,6 +214,11 @@ signals already collected, no extra tool, setup, or flag needed. It
 leads the text report, and it's present in the saved case JSON alongside
 every other finding.
 
+Once a sample has a non-`unclassified` verdict, a likely-packed reading
+or (PE only) an unsigned reading each raise the risk tier by one step,
+and the two stack independently (still capped at `high`). Each applied
+bump is called out in the reasoning list.
+
 The detection name isn't a new algorithm, it's a compact label built
 from the same verdict and evidence already computed: verdict, a `Win32`/
 `Win64` platform tag derived from the PE's machine type, a short token
