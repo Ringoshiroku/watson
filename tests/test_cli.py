@@ -1193,6 +1193,84 @@ def test_analyze_directory_unpacks_and_saves_second_cases_for_upx_packed_samples
     assert "unpacked: 1" in captured.out
 
 
+def test_analyze_survives_unparseable_unpacked_output_and_still_saves_the_primary_case(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "UPX", "version": None, "string": None}]}],
+    )
+    monkeypatch.setattr(
+        "watson.cli.upx_unpack.unpack_file",
+        lambda file_path, output_path, **k: output_path.write_bytes(
+            b"not a valid pe or elf, this will fail detect_format"
+        ),
+    )
+
+    exit_code = main(
+        ["analyze", str(compiled_pe), "--out", str(out_dir), "--diec", "--unpack"]
+    )
+
+    assert exit_code == 0
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith(("_floss.json", "_ranked_strings.json"))]
+    assert len(case_files) == 1
+    data = json.loads(case_files[0].read_text())
+    assert "re-analysis failed" in data["static"]["unpacking"]["reason"]
+    assert data["static"]["unpacking"]["success"] is True
+    assert data["static"]["unpacking"]["unpacked_sha256"] is None
+    captured = capsys.readouterr()
+    assert "Unpacked binary analysis" not in captured.out
+    assert "re-analysis failed" in captured.out
+
+
+def test_analyze_directory_survives_unparseable_unpacked_output_and_analyzes_remaining_files(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    samples_dir = tmp_path / "samples"
+    samples_dir.mkdir()
+    shutil.copy(compiled_pe, samples_dir / "one.exe")
+    shutil.copy(compiled_pe, samples_dir / "two.exe")
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+
+    def fake_die_scan(file_path, *a, **k):
+        if file_path.name == "one.exe":
+            return [{"filetype": "PE64", "values": [{"type": "packer", "name": "UPX", "version": None, "string": None}]}]
+        return []
+
+    monkeypatch.setattr("watson.cli.die_scan_file", fake_die_scan)
+    monkeypatch.setattr(
+        "watson.cli.upx_unpack.unpack_file",
+        lambda file_path, output_path, **k: output_path.write_bytes(
+            b"not a valid pe or elf, this will fail detect_format"
+        ),
+    )
+
+    exit_code = main(["analyze", str(samples_dir), "--out", str(out_dir), "--diec", "--unpack"])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "one.exe:" in captured.err
+    assert "two.exe:" in captured.err
+    assert "[unpacked, re-analysis failed]" in captured.err
+    assert "Batch summary" in captured.out
+    assert "analyzed: 2" in captured.out
+    assert "unpacked: 1" in captured.out
+
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith(("_floss.json", "_ranked_strings.json"))]
+    assert len(case_files) == 2
+    unpacked_files = [f for f in case_files if "_unpacked" in f.name]
+    assert len(unpacked_files) == 0
+    summary_files = list(out_dir.glob("*-batch-summary.txt"))
+    assert len(summary_files) == 1
+
+
 def test_analyze_directory_recursively_finds_and_analyzes_files(compiled_pe, tmp_path, capsys, monkeypatch):
     _isolate_rule_caches(monkeypatch, tmp_path)
     samples_dir = tmp_path / "samples"

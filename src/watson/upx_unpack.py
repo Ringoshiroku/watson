@@ -11,7 +11,7 @@ class UpxUnpackError(Exception):
 def unpack_file(file_path: Path, output_path: Path, upx_binary: str = "upx", timeout: int = 60) -> None:
     try:
         result = subprocess.run(
-            [upx_binary, "-d", "-q", "-o", str(output_path), str(file_path)],
+            [upx_binary, "-d", "-q", "--force-overwrite", "-o", str(output_path), str(file_path)],
             capture_output=True,
             text=True,
             timeout=timeout,

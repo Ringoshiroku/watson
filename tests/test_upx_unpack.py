@@ -38,6 +38,18 @@ def test_unpack_file_raises_upx_unpack_error_when_binary_missing(tmp_path):
         unpack_file(input_file, output, upx_binary="definitely-not-a-real-upx-binary-xyz")
 
 
+@requires_upx
+def test_unpack_file_overwrites_a_pre_existing_output_path(compiled_pe, tmp_path):
+    packed = tmp_path / "packed.exe"
+    subprocess.run(["upx", "-q", "--best", "-o", str(packed), str(compiled_pe)], check=True)
+    output = tmp_path / "unpacked.exe"
+    output.write_bytes(b"pre-existing placeholder content")  # simulates tempfile.mkstemp's pre-created file
+
+    unpack_file(packed, output)
+
+    assert output.stat().st_size == compiled_pe.stat().st_size
+
+
 def test_unpack_file_raises_upx_unpack_error_on_timeout(tmp_path, monkeypatch):
     input_file = tmp_path / "in.exe"
     input_file.write_bytes(b"not a real pe")

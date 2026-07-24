@@ -678,31 +678,35 @@ def _run_analyze(
         case.static.unpacking.output_path = str(unpacked_path)
 
         attempt_yara, attempt_capa, run_floss_resolved, run_die_resolved, run_rank_resolved = resolved_capabilities
-        (
-            unpacked_case,
-            unpacked_floss_raw,
-            _,
-            unpacked_ranked_strings_full,
-            unpacked_flags_suffix,
-            _,
-        ) = build_case(
-            unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss_resolved, run_die_resolved,
-            attempt_yara, attempt_capa, run_rank_resolved, run_unpack=False,
-        )
-        case.static.unpacking.unpacked_sha256 = unpacked_case.identity.sha256
-
-        unpacked_now = datetime.now()
-        if unpacked_floss_raw is not None:
-            save_raw_output(unpacked_floss_raw, out_dir, unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix))
-        if unpacked_ranked_strings_full is not None:
-            save_ranked_strings(
-                unpacked_ranked_strings_full, out_dir, unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix)
+        try:
+            (
+                unpacked_case,
+                unpacked_floss_raw,
+                _,
+                unpacked_ranked_strings_full,
+                unpacked_flags_suffix,
+                _,
+            ) = build_case(
+                unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss_resolved, run_die_resolved,
+                attempt_yara, attempt_capa, run_rank_resolved, run_unpack=False,
             )
-        unpacked_text_report = build_text_report(unpacked_case, verbose=effective_verbose)
-        unpacked_case.save(
-            out_dir, unpacked_now, data=build_json_report(unpacked_case),
-            text_report=unpacked_text_report, flags=unpacked_flags_suffix,
-        )
+        except (InvalidPEError, InvalidELFError, UnsupportedFormatError) as exc:
+            case.static.unpacking.reason = f"unpacked but re-analysis failed: {exc}"
+        else:
+            case.static.unpacking.unpacked_sha256 = unpacked_case.identity.sha256
+
+            unpacked_now = datetime.now()
+            if unpacked_floss_raw is not None:
+                save_raw_output(unpacked_floss_raw, out_dir, unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix))
+            if unpacked_ranked_strings_full is not None:
+                save_ranked_strings(
+                    unpacked_ranked_strings_full, out_dir, unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix)
+                )
+            unpacked_text_report = build_text_report(unpacked_case, verbose=effective_verbose)
+            unpacked_case.save(
+                out_dir, unpacked_now, data=build_json_report(unpacked_case),
+                text_report=unpacked_text_report, flags=unpacked_flags_suffix,
+            )
 
     if floss_raw is not None:
         save_raw_output(floss_raw, out_dir, case.output_basename(now, flags_suffix))
@@ -803,34 +807,40 @@ def _run_batch(
             case.static.unpacking.output_path = str(unpacked_path)
 
             r_attempt_yara, r_attempt_capa, r_run_floss, r_run_die, r_run_rank = resolved_capabilities
-            (
-                unpacked_case,
-                unpacked_floss_raw,
-                _,
-                unpacked_ranked_strings_full,
-                unpacked_flags_suffix,
-                _,
-            ) = build_case(
-                unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, r_run_floss, r_run_die,
-                r_attempt_yara, r_attempt_capa, r_run_rank, run_unpack=False,
-            )
-            case.static.unpacking.unpacked_sha256 = unpacked_case.identity.sha256
-
-            unpacked_now = datetime.now()
-            if unpacked_floss_raw is not None:
-                save_raw_output(unpacked_floss_raw, out_dir, unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix))
-            if unpacked_ranked_strings_full is not None:
-                save_ranked_strings(
-                    unpacked_ranked_strings_full, out_dir,
-                    unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix),
+            try:
+                (
+                    unpacked_case,
+                    unpacked_floss_raw,
+                    _,
+                    unpacked_ranked_strings_full,
+                    unpacked_flags_suffix,
+                    _,
+                ) = build_case(
+                    unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, r_run_floss, r_run_die,
+                    r_attempt_yara, r_attempt_capa, r_run_rank, run_unpack=False,
                 )
-            unpacked_text_report = build_text_report(unpacked_case, verbose=effective_verbose)
-            unpacked_case.save(
-                out_dir, unpacked_now, data=build_json_report(unpacked_case),
-                text_report=unpacked_text_report, flags=unpacked_flags_suffix,
-            )
-            unpacked += 1
-            unpacked_text_note = " [unpacked]"
+            except (InvalidPEError, InvalidELFError, UnsupportedFormatError) as exc:
+                case.static.unpacking.reason = f"unpacked but re-analysis failed: {exc}"
+                unpacked += 1
+                unpacked_text_note = " [unpacked, re-analysis failed]"
+            else:
+                case.static.unpacking.unpacked_sha256 = unpacked_case.identity.sha256
+
+                unpacked_now = datetime.now()
+                if unpacked_floss_raw is not None:
+                    save_raw_output(unpacked_floss_raw, out_dir, unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix))
+                if unpacked_ranked_strings_full is not None:
+                    save_ranked_strings(
+                        unpacked_ranked_strings_full, out_dir,
+                        unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix),
+                    )
+                unpacked_text_report = build_text_report(unpacked_case, verbose=effective_verbose)
+                unpacked_case.save(
+                    out_dir, unpacked_now, data=build_json_report(unpacked_case),
+                    text_report=unpacked_text_report, flags=unpacked_flags_suffix,
+                )
+                unpacked += 1
+                unpacked_text_note = " [unpacked]"
 
         if floss_raw is not None:
             save_raw_output(floss_raw, out_dir, case.output_basename(now, flags_suffix))
