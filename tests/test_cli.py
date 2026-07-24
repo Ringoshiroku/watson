@@ -1034,6 +1034,27 @@ def test_analyze_directory_asks_analysis_selection_once_for_whole_batch(
     assert captured.out.count("which analyses do you want to run?") == 1
 
 
+def test_analyze_directory_uses_same_flags_suffix_for_every_file_in_batch(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    samples_dir = tmp_path / "samples"
+    samples_dir.mkdir()
+    shutil.copy(compiled_pe, samples_dir / "one.exe")
+    shutil.copy(compiled_pe, samples_dir / "two.exe")
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    # answer "y" to the analysis-selection prompt: only YARA selected, for the whole batch
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+
+    exit_code = main(["analyze", str(samples_dir), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith("_floss.json")]
+    assert len(case_files) == 2
+    assert all(f.name.endswith("-y.json") for f in case_files)
+
+
 def test_analyze_directory_asks_floss_and_die_confirmation_once_each(
     compiled_pe, tmp_path, capsys, monkeypatch
 ):
