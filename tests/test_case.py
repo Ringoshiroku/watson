@@ -34,6 +34,31 @@ def test_case_round_trips_through_dict():
     assert restored.static.pe_metadata.imports == {"msvcrt.dll": ["printf"]}
 
 
+def test_case_round_trips_unpacking_result_through_dict():
+    from watson.case import UnpackingResult
+
+    case = _sample_case()
+    case.static.unpacking = UnpackingResult(
+        tool="upx", success=True, output_path="/tmp/unpacked.exe", unpacked_sha256="f" * 64
+    )
+
+    data = case.to_dict()
+    restored = Case.from_dict(data)
+
+    assert restored.static.unpacking == UnpackingResult(
+        tool="upx", success=True, output_path="/tmp/unpacked.exe", unpacked_sha256="f" * 64
+    )
+
+
+def test_case_round_trips_absent_unpacking_result_as_none():
+    case = _sample_case()
+
+    data = case.to_dict()
+    restored = Case.from_dict(data)
+
+    assert restored.static.unpacking is None
+
+
 def test_case_save_writes_json_named_by_timestamp_and_filename(tmp_path):
     from datetime import datetime
 

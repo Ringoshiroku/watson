@@ -196,6 +196,44 @@ def test_build_text_report_shows_tools_and_yara_matches():
     assert "watson_test_fixture_string" in report
 
 
+def test_build_text_report_renders_unpacking_section_on_success():
+    from watson.case import UnpackingResult
+
+    case = _sample_case()
+    case.static.unpacking = UnpackingResult(
+        tool="upx", success=True, output_path="/out/sample_unpacked.exe", unpacked_sha256="f" * 64
+    )
+
+    text_report = build_text_report(case)
+
+    assert "Unpacking" in text_report
+    assert "tool: upx" in text_report
+    assert "result: succeeded" in text_report
+    assert "output: /out/sample_unpacked.exe" in text_report
+    assert f"unpacked sha256: {'f' * 64}" in text_report
+
+
+def test_build_text_report_renders_unpacking_section_on_failure():
+    from watson.case import UnpackingResult
+
+    case = _sample_case()
+    case.static.unpacking = UnpackingResult(tool="upx", success=False, reason="upx exited with code 2")
+
+    text_report = build_text_report(case)
+
+    assert "Unpacking" in text_report
+    assert "result: failed" in text_report
+    assert "reason: upx exited with code 2" in text_report
+
+
+def test_build_text_report_omits_unpacking_section_when_absent():
+    case = _sample_case()
+
+    text_report = build_text_report(case)
+
+    assert "Unpacking" not in text_report
+
+
 def _sample_case_with_yara_match_detail() -> Case:
     identity = Identity(
         sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"

@@ -356,6 +356,39 @@ def test_analyze_saves_output_files_with_capability_flags_suffix(compiled_pe, tm
     assert len(saved_files) == 1
 
 
+def test_capability_flags_suffix_includes_u_when_unpack_selected():
+    from watson.cli import _capability_flags_suffix
+
+    suffix = _capability_flags_suffix(True, False, False, True, False, True)
+
+    assert suffix == "ydu"
+
+
+def test_capability_options_includes_unpack_letter():
+    from watson.cli import CAPABILITY_OPTIONS
+
+    keys = [key for key, _ in CAPABILITY_OPTIONS]
+
+    assert keys == ["y", "c", "f", "d", "r", "u"]
+
+
+def test_resolve_upx_reports_unavailable_with_install_hint_when_missing(monkeypatch):
+    from watson.cli import _resolve_upx
+
+    original_which = shutil.which
+    monkeypatch.setattr(
+        "watson.tool_discovery.shutil.which",
+        lambda name: None if name == "upx" else original_which(name),
+    )
+    monkeypatch.setattr("watson.cli.platform.system", lambda: "Linux")
+
+    status, path = _resolve_upx(offline=False)
+
+    assert status["available"] is False
+    assert "upx-ucl" in status["reason"]
+    assert path is None
+
+
 def test_analyze_selecting_yara_when_missing_reports_unavailable_without_fetch_prompt(
     compiled_pe, tmp_path, capsys, monkeypatch
 ):
@@ -874,7 +907,7 @@ def test_build_case_respects_explicit_run_yara_and_run_capa_false(compiled_pe, m
 
     monkeypatch.setattr("builtins.input", fail_if_called)
 
-    case, floss_raw, forced_verbose, ranked_strings_full, _ = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -950,7 +983,7 @@ def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_r
     answers = iter(["n", "n", "n"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
 
-    case, floss_raw, forced_verbose, ranked_strings_full, _ = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, _, _ = build_case(
         compiled_pe, run_yara=False, run_capa=False
     )
 
@@ -960,7 +993,7 @@ def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_r
 
 
 def test_build_case_returns_flags_suffix_matching_selected_capabilities(compiled_pe):
-    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, _ = build_case(
         compiled_pe,
         run_yara=True,
         run_capa=False,
@@ -973,7 +1006,7 @@ def test_build_case_returns_flags_suffix_matching_selected_capabilities(compiled
 
 
 def test_build_case_returns_empty_flags_suffix_when_nothing_selected(compiled_pe):
-    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -983,6 +1016,259 @@ def test_build_case_returns_empty_flags_suffix_when_nothing_selected(compiled_pe
     )
 
     assert flags_suffix == ""
+
+
+def test_build_case_returns_six_element_tuple_including_resolved_capabilities(compiled_pe):
+    result = build_case(
+        compiled_pe,
+        run_yara=True,
+        run_capa=False,
+        run_floss=True,
+        run_die=False,
+        run_rank=False,
+    )
+
+    assert len(result) == 6
+    resolved_capabilities = result[5]
+    assert resolved_capabilities == (True, False, True, False, False)
+
+
+def test_build_case_does_not_attempt_unpack_when_run_unpack_false(compiled_pe):
+    case, _, _, _, _, _ = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=False,
+        run_rank=False,
+        run_unpack=False,
+    )
+
+    assert case.static.unpacking is None
+
+
+def test_build_case_does_not_attempt_unpack_when_die_not_run(compiled_pe, monkeypatch):
+    monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
+
+    case, _, _, _, _, _ = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=False,
+        run_rank=False,
+        run_unpack=True,
+    )
+
+    assert case.static.unpacking is None
+
+
+def test_build_case_does_not_attempt_unpack_when_die_finds_no_upx(compiled_pe, monkeypatch):
+    monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr("watson.cli.die_scan_file", lambda *a, **k: [])
+
+    case, _, _, _, _, _ = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=True,
+        run_rank=False,
+        run_unpack=True,
+    )
+
+    assert case.static.unpacking is None
+
+
+def test_build_case_populates_unpacking_result_when_upx_detected_and_unpack_succeeds(compiled_pe, monkeypatch, tmp_path):
+    monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "UPX", "version": "4.2.4", "string": None}]}],
+    )
+    monkeypatch.setattr("watson.cli.upx_unpack.unpack_file", lambda file_path, output_path, **k: output_path.write_bytes(b"unpacked"))
+
+    case, _, _, _, _, _ = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=True,
+        run_rank=False,
+        run_unpack=True,
+    )
+
+    assert case.static.unpacking is not None
+    assert case.static.unpacking.tool == "upx"
+    assert case.static.unpacking.success is True
+    assert case.static.unpacking.output_path is not None
+    assert Path(case.static.unpacking.output_path).exists()
+
+
+def test_build_case_records_failure_reason_when_unpack_fails(compiled_pe, monkeypatch):
+    from watson.upx_unpack import UpxUnpackError
+
+    monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "UPX", "version": None, "string": None}]}],
+    )
+
+    def failing_unpack(*a, **k):
+        raise UpxUnpackError("upx exited with code 2")
+
+    monkeypatch.setattr("watson.cli.upx_unpack.unpack_file", failing_unpack)
+
+    case, _, _, _, _, _ = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=True,
+        run_rank=False,
+        run_unpack=True,
+    )
+
+    assert case.static.unpacking.success is False
+    assert case.static.unpacking.reason == "upx exited with code 2"
+
+
+def test_analyze_unpacks_and_saves_a_second_case_for_a_upx_packed_sample(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "UPX", "version": None, "string": None}]}],
+    )
+    monkeypatch.setattr(
+        "watson.cli.upx_unpack.unpack_file",
+        lambda file_path, output_path, **k: output_path.write_bytes(file_path.read_bytes()),
+    )
+
+    exit_code = main(
+        ["analyze", str(compiled_pe), "--out", str(out_dir), "--diec", "--unpack"]
+    )
+
+    assert exit_code == 0
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith(("_floss.json", "_ranked_strings.json"))]
+    assert len(case_files) == 2
+    unpacked_files = [f for f in case_files if "_unpacked" in f.name]
+    assert len(unpacked_files) == 1
+    captured = capsys.readouterr()
+    assert "Unpacked binary analysis" in captured.out
+
+
+def test_analyze_directory_unpacks_and_saves_second_cases_for_upx_packed_samples(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    samples_dir = tmp_path / "samples"
+    samples_dir.mkdir()
+    shutil.copy(compiled_pe, samples_dir / "one.exe")
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "UPX", "version": None, "string": None}]}],
+    )
+    monkeypatch.setattr(
+        "watson.cli.upx_unpack.unpack_file",
+        lambda file_path, output_path, **k: output_path.write_bytes(file_path.read_bytes()),
+    )
+
+    exit_code = main(["analyze", str(samples_dir), "--out", str(out_dir), "--diec", "--unpack"])
+
+    assert exit_code == 0
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith(("_floss.json", "_ranked_strings.json"))]
+    assert len(case_files) == 2
+    unpacked_files = [f for f in case_files if "_unpacked" in f.name]
+    assert len(unpacked_files) == 1
+    captured = capsys.readouterr()
+    assert "unpacked: 1" in captured.out
+
+
+def test_analyze_survives_unparseable_unpacked_output_and_still_saves_the_primary_case(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "UPX", "version": None, "string": None}]}],
+    )
+    monkeypatch.setattr(
+        "watson.cli.upx_unpack.unpack_file",
+        lambda file_path, output_path, **k: output_path.write_bytes(
+            b"not a valid pe or elf, this will fail detect_format"
+        ),
+    )
+
+    exit_code = main(
+        ["analyze", str(compiled_pe), "--out", str(out_dir), "--diec", "--unpack"]
+    )
+
+    assert exit_code == 0
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith(("_floss.json", "_ranked_strings.json"))]
+    assert len(case_files) == 1
+    data = json.loads(case_files[0].read_text())
+    assert "re-analysis failed" in data["static"]["unpacking"]["reason"]
+    assert data["static"]["unpacking"]["success"] is True
+    assert data["static"]["unpacking"]["unpacked_sha256"] is None
+    captured = capsys.readouterr()
+    assert "Unpacked binary analysis" not in captured.out
+    assert "re-analysis failed" in captured.out
+
+
+def test_analyze_directory_survives_unparseable_unpacked_output_and_analyzes_remaining_files(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    samples_dir = tmp_path / "samples"
+    samples_dir.mkdir()
+    shutil.copy(compiled_pe, samples_dir / "one.exe")
+    shutil.copy(compiled_pe, samples_dir / "two.exe")
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+
+    def fake_die_scan(file_path, *a, **k):
+        if file_path.name == "one.exe":
+            return [{"filetype": "PE64", "values": [{"type": "packer", "name": "UPX", "version": None, "string": None}]}]
+        return []
+
+    monkeypatch.setattr("watson.cli.die_scan_file", fake_die_scan)
+    monkeypatch.setattr(
+        "watson.cli.upx_unpack.unpack_file",
+        lambda file_path, output_path, **k: output_path.write_bytes(
+            b"not a valid pe or elf, this will fail detect_format"
+        ),
+    )
+
+    exit_code = main(["analyze", str(samples_dir), "--out", str(out_dir), "--diec", "--unpack"])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "one.exe:" in captured.err
+    assert "two.exe:" in captured.err
+    assert "[unpacked, re-analysis failed]" in captured.err
+    assert "Batch summary" in captured.out
+    assert "analyzed: 2" in captured.out
+    assert "unpacked: 1" in captured.out
+
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith(("_floss.json", "_ranked_strings.json"))]
+    assert len(case_files) == 2
+    unpacked_files = [f for f in case_files if "_unpacked" in f.name]
+    assert len(unpacked_files) == 0
+    summary_files = list(out_dir.glob("*-batch-summary.txt"))
+    assert len(summary_files) == 1
 
 
 def test_analyze_directory_recursively_finds_and_analyzes_files(compiled_pe, tmp_path, capsys, monkeypatch):

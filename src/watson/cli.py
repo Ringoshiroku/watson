@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import os
 import platform
+import shutil
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from watson.case import Case, ELFMetadata, Identity, PEMetadata, StaticSection
+from watson.case import Case, ELFMetadata, Identity, PEMetadata, StaticSection, UnpackingResult
 from watson.capa_scan import CapaScanError, scan_file as capa_scan_file
 from watson.die_scan import DieScanError, identify_packers, scan_file as die_scan_file
+from watson import upx_unpack
+from watson.upx_unpack import UpxUnpackError
 from watson.elf_metadata import InvalidELFError, extract_elf_metadata
 from watson.file_format import UnsupportedFormatError, detect_format
 from watson.floss_scan import FlossScanError, flatten_strings, save_raw_output, scan_file as floss_scan_file
@@ -42,6 +47,11 @@ DIE_CACHE = WATSON_HOME / "tools" / "diec"
 DIE_RELEASE_BASE = f"https://github.com/horsicq/DIE-engine/releases/download/{DIE_VERSION}"
 DIE_WIN64_URL = f"{DIE_RELEASE_BASE}/die_win64_portable_{DIE_VERSION}_x64.zip"
 DIE_WIN32_URL = f"{DIE_RELEASE_BASE}/die_win32_portable_{DIE_VERSION}_x86.zip"
+UPX_VERSION = "5.2.0"
+UPX_CACHE = WATSON_HOME / "tools" / "upx"
+UPX_RELEASE_BASE = f"https://github.com/upx/upx/releases/download/v{UPX_VERSION}"
+UPX_WIN64_URL = f"{UPX_RELEASE_BASE}/upx-{UPX_VERSION}-win64.zip"
+UPX_WIN32_URL = f"{UPX_RELEASE_BASE}/upx-{UPX_VERSION}-win32.zip"
 
 # Same letters as the -y/-c/-f/-d short flags, so what you'd type at the prompt
 # and what you'd pass on the command line to skip it match exactly.
@@ -51,11 +61,15 @@ CAPABILITY_OPTIONS = [
     ("f", "FLOSS string extraction and IOC flagging"),
     ("d", "Detect It Easy packer/compiler/linker detection"),
     ("r", "StringSifter relevance ranking of extracted strings"),
+    ("u", "auto-unpack UPX-packed samples and re-analyze the unpacked binary"),
 ]
 
 
-def _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank) -> str:
-    selected = {"y": attempt_yara, "c": attempt_capa, "f": run_floss, "d": run_die, "r": run_rank}
+def _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_unpack) -> str:
+    selected = {
+        "y": attempt_yara, "c": attempt_capa, "f": run_floss,
+        "d": run_die, "r": run_rank, "u": run_unpack,
+    }
     return "".join(key for key, _ in CAPABILITY_OPTIONS if selected[key])
 
 
@@ -145,6 +159,40 @@ def _resolve_die(offline: bool) -> tuple[dict, str | None]:
     return {"available": False, "reason": _die_install_hint()}, None
 
 
+def _upx_install_hint() -> str:
+    system = platform.system()
+    if system == "Linux":
+        return (
+            "on Debian/Kali/Ubuntu, install with 'sudo apt install upx-ucl'; "
+            "otherwise see https://github.com/upx/upx/releases"
+        )
+    if system == "Windows":
+        return (
+            "install with 'choco install upx' (Chocolatey), or see "
+            "https://github.com/upx/upx/releases"
+        )
+    return "see https://github.com/upx/upx/releases for install instructions"
+
+
+def _resolve_upx(offline: bool) -> tuple[dict, str | None]:
+    upx_status = find_binary("upx", pip_package=None, offline=offline)
+    if not upx_status.available and platform.system() == "Windows":
+        machine = platform.machine().lower()
+        if machine in ("amd64", "x86_64"):
+            archive_url, binary_relpath = UPX_WIN64_URL, f"upx-{UPX_VERSION}-win64/upx.exe"
+        elif machine in ("x86", "i386", "i686"):
+            archive_url, binary_relpath = UPX_WIN32_URL, f"upx-{UPX_VERSION}-win32/upx.exe"
+        else:
+            archive_url, binary_relpath = None, ""
+        if archive_url:
+            upx_status = find_or_fetch_zip_binary(
+                "upx", binary_relpath, cache_dir=UPX_CACHE, archive_url=archive_url, offline=offline
+            )
+    if upx_status.available:
+        return {"available": True, "reason": None}, upx_status.path
+    return {"available": False, "reason": _upx_install_hint()}, None
+
+
 def _resolve_stringsifter(offline: bool) -> dict:
     stringsifter_status = find_binary("rank_strings", pip_package="stringsifter", offline=offline)
     return {"available": stringsifter_status.available, "reason": stringsifter_status.reason}
@@ -215,6 +263,7 @@ def build_case(
     run_yara: bool | None = None,
     run_capa: bool | None = None,
     run_rank: bool | None = None,
+    run_unpack: bool | None = None,
 ) -> tuple:
     hashes = compute_hashes(file_path)
     file_format = detect_format(file_path)
@@ -369,6 +418,26 @@ def build_case(
             "reason": "diec not requested (use --diec)",
         }
 
+    unpacking = None
+
+    if run_unpack:
+        tools["upx"], resolved_upx_path = _resolve_upx(offline=True)
+        if tools["upx"]["available"] and "UPX" in identify_packers(die_detections):
+            tmp_fd, tmp_path_str = tempfile.mkstemp(suffix=file_path.suffix)
+            os.close(tmp_fd)
+            tmp_path = Path(tmp_path_str)
+            try:
+                upx_unpack.unpack_file(file_path, tmp_path, upx_binary=resolved_upx_path)
+                unpacking = UnpackingResult(tool="upx", success=True, output_path=str(tmp_path))
+            except UpxUnpackError as exc:
+                tmp_path.unlink(missing_ok=True)
+                unpacking = UnpackingResult(tool="upx", success=False, reason=str(exc))
+    else:
+        tools["upx"] = {
+            "available": False,
+            "reason": "unpack not requested (use --unpack)",
+        }
+
     classification = classify(
         yara_matches,
         capabilities,
@@ -390,9 +459,18 @@ def build_case(
         classification=classification,
         die_detections=die_detections,
         ranked_strings=(ranked_strings_full or [])[:20],
+        unpacking=unpacking,
     )
-    flags_suffix = _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank)
-    return Case(identity=identity, static=static), floss_raw, forced_verbose, ranked_strings_full, flags_suffix
+    resolved_capabilities = (attempt_yara, attempt_capa, run_floss, run_die, run_rank)
+    flags_suffix = _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank, bool(run_unpack))
+    return (
+        Case(identity=identity, static=static),
+        floss_raw,
+        forced_verbose,
+        ranked_strings_full,
+        flags_suffix,
+        resolved_capabilities,
+    )
 
 
 def main(argv: list | None = None) -> int:
@@ -466,6 +544,18 @@ def main(argv: list | None = None) -> int:
         ),
     )
     analyze_parser.add_argument(
+        "-u",
+        "--unpack",
+        action="store_true",
+        default=None,
+        help=(
+            "If Detect It Easy identifies UPX packing, unpack the sample and "
+            "automatically re-analyze the unpacked binary as a second case "
+            "(needs --diec to have run and upx on PATH). Omit to be asked "
+            "interactively."
+        ),
+    )
+    analyze_parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -487,6 +577,7 @@ def main(argv: list | None = None) -> int:
             args.floss,
             args.diec,
             args.rank_strings,
+            args.unpack,
             args.verbose,
         )
 
@@ -543,6 +634,7 @@ def _run_analyze(
     run_floss: bool | None,
     run_die: bool | None,
     run_rank: bool | None,
+    run_unpack: bool | None,
     verbose: bool,
 ) -> int:
     if file_path.is_dir():
@@ -555,6 +647,7 @@ def _run_analyze(
             run_floss,
             run_die,
             run_rank,
+            run_unpack,
             verbose,
         )
 
@@ -565,8 +658,9 @@ def _run_analyze(
     out_dir = _resolve_out_dir(out_dir)
 
     try:
-        case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix = build_case(
-            file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die, run_rank=run_rank
+        case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, resolved_capabilities = build_case(
+            file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die,
+            run_rank=run_rank, run_unpack=run_unpack,
         )
     except (InvalidPEError, InvalidELFError, UnsupportedFormatError) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -575,6 +669,45 @@ def _run_analyze(
     effective_verbose = verbose or forced_verbose
 
     now = datetime.now()
+    unpacked_text_report = None
+
+    if case.static.unpacking is not None and case.static.unpacking.success:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        unpacked_path = out_dir / f"{case.output_basename(now, flags_suffix)}_unpacked{file_path.suffix}"
+        shutil.move(case.static.unpacking.output_path, unpacked_path)
+        case.static.unpacking.output_path = str(unpacked_path)
+
+        attempt_yara, attempt_capa, run_floss_resolved, run_die_resolved, run_rank_resolved = resolved_capabilities
+        try:
+            (
+                unpacked_case,
+                unpacked_floss_raw,
+                _,
+                unpacked_ranked_strings_full,
+                unpacked_flags_suffix,
+                _,
+            ) = build_case(
+                unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss_resolved, run_die_resolved,
+                attempt_yara, attempt_capa, run_rank_resolved, run_unpack=False,
+            )
+        except (InvalidPEError, InvalidELFError, UnsupportedFormatError) as exc:
+            case.static.unpacking.reason = f"unpacked but re-analysis failed: {exc}"
+        else:
+            case.static.unpacking.unpacked_sha256 = unpacked_case.identity.sha256
+
+            unpacked_now = datetime.now()
+            if unpacked_floss_raw is not None:
+                save_raw_output(unpacked_floss_raw, out_dir, unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix))
+            if unpacked_ranked_strings_full is not None:
+                save_ranked_strings(
+                    unpacked_ranked_strings_full, out_dir, unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix)
+                )
+            unpacked_text_report = build_text_report(unpacked_case, verbose=effective_verbose)
+            unpacked_case.save(
+                out_dir, unpacked_now, data=build_json_report(unpacked_case),
+                text_report=unpacked_text_report, flags=unpacked_flags_suffix,
+            )
+
     if floss_raw is not None:
         save_raw_output(floss_raw, out_dir, case.output_basename(now, flags_suffix))
     if ranked_strings_full is not None:
@@ -583,10 +716,18 @@ def _run_analyze(
     text_report = build_text_report(case, verbose=effective_verbose)
     case.save(out_dir, now, data=build_json_report(case), text_report=text_report, flags=flags_suffix)
     print(text_report)
+
+    if unpacked_text_report is not None:
+        print()
+        print("=" * 30)
+        print("Unpacked binary analysis")
+        print("=" * 30)
+        print(unpacked_text_report)
+
     return 0
 
 
-def _build_batch_summary(total: int, analyzed: int, skipped: int, failed: list) -> str:
+def _build_batch_summary(total: int, analyzed: int, skipped: int, failed: list, unpacked: int) -> str:
     lines = [
         "Batch summary",
         "-------------",
@@ -594,6 +735,7 @@ def _build_batch_summary(total: int, analyzed: int, skipped: int, failed: list) 
         f"  analyzed: {analyzed}",
         f"  skipped (not a valid PE or ELF): {skipped}",
         f"  failed: {len(failed)}",
+        f"  unpacked: {unpacked}",
     ]
     if failed:
         lines.append("")
@@ -612,6 +754,7 @@ def _run_batch(
     run_floss: bool | None,
     run_die: bool | None,
     run_rank: bool | None,
+    run_unpack: bool | None,
     verbose: bool,
 ) -> int:
     out_dir = _resolve_out_dir(out_dir)
@@ -621,16 +764,17 @@ def _run_batch(
         rules_dir, capa_rules_dir, run_floss, run_die, None, None, run_rank, "this batch"
     )
     effective_verbose = verbose or forced_verbose
-    flags_suffix = _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank)
+    flags_suffix = _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank, bool(run_unpack))
 
     total = len(files)
     analyzed = 0
     skipped = 0
     failed = []
+    unpacked = 0
 
     for index, file_path in enumerate(files, start=1):
         try:
-            case, floss_raw, _, ranked_strings_full, _ = build_case(
+            case, floss_raw, _, ranked_strings_full, _, resolved_capabilities = build_case(
                 file_path,
                 rules_dir,
                 capa_rules_dir,
@@ -640,6 +784,7 @@ def _run_batch(
                 attempt_yara,
                 attempt_capa,
                 run_rank,
+                run_unpack=run_unpack,
             )
         except (InvalidPEError, InvalidELFError, UnsupportedFormatError):
             skipped += 1
@@ -653,6 +798,50 @@ def _run_batch(
             continue
 
         now = datetime.now()
+        unpacked_text_note = ""
+
+        if case.static.unpacking is not None and case.static.unpacking.success:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            unpacked_path = out_dir / f"{case.output_basename(now, flags_suffix)}_unpacked{file_path.suffix}"
+            shutil.move(case.static.unpacking.output_path, unpacked_path)
+            case.static.unpacking.output_path = str(unpacked_path)
+
+            r_attempt_yara, r_attempt_capa, r_run_floss, r_run_die, r_run_rank = resolved_capabilities
+            try:
+                (
+                    unpacked_case,
+                    unpacked_floss_raw,
+                    _,
+                    unpacked_ranked_strings_full,
+                    unpacked_flags_suffix,
+                    _,
+                ) = build_case(
+                    unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, r_run_floss, r_run_die,
+                    r_attempt_yara, r_attempt_capa, r_run_rank, run_unpack=False,
+                )
+            except (InvalidPEError, InvalidELFError, UnsupportedFormatError) as exc:
+                case.static.unpacking.reason = f"unpacked but re-analysis failed: {exc}"
+                unpacked += 1
+                unpacked_text_note = " [unpacked, re-analysis failed]"
+            else:
+                case.static.unpacking.unpacked_sha256 = unpacked_case.identity.sha256
+
+                unpacked_now = datetime.now()
+                if unpacked_floss_raw is not None:
+                    save_raw_output(unpacked_floss_raw, out_dir, unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix))
+                if unpacked_ranked_strings_full is not None:
+                    save_ranked_strings(
+                        unpacked_ranked_strings_full, out_dir,
+                        unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix),
+                    )
+                unpacked_text_report = build_text_report(unpacked_case, verbose=effective_verbose)
+                unpacked_case.save(
+                    out_dir, unpacked_now, data=build_json_report(unpacked_case),
+                    text_report=unpacked_text_report, flags=unpacked_flags_suffix,
+                )
+                unpacked += 1
+                unpacked_text_note = " [unpacked]"
+
         if floss_raw is not None:
             save_raw_output(floss_raw, out_dir, case.output_basename(now, flags_suffix))
         if ranked_strings_full is not None:
@@ -664,9 +853,9 @@ def _run_batch(
         analyzed += 1
         verdict = case.static.classification["verdict"]
         risk = case.static.classification["risk"]
-        print(f"[{index}/{total}] {file_path.name}: {verdict} ({risk} risk)", file=sys.stderr)
+        print(f"[{index}/{total}] {file_path.name}: {verdict} ({risk} risk){unpacked_text_note}", file=sys.stderr)
 
-    summary = _build_batch_summary(total, analyzed, skipped, failed)
+    summary = _build_batch_summary(total, analyzed, skipped, failed, unpacked)
     print(summary)
     out_dir.mkdir(parents=True, exist_ok=True)
     summary_timestamp = datetime.now().strftime("%H-%M-%S-%d-%m-%Y")

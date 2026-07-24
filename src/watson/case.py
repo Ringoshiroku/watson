@@ -55,6 +55,15 @@ class ELFMetadata:
 
 
 @dataclass
+class UnpackingResult:
+    tool: str
+    success: bool
+    reason: Optional[str] = None
+    output_path: Optional[str] = None
+    unpacked_sha256: Optional[str] = None
+
+
+@dataclass
 class StaticSection:
     pe_metadata: Optional[PEMetadata] = None
     elf_metadata: Optional[ELFMetadata] = None
@@ -65,6 +74,7 @@ class StaticSection:
     classification: Optional[dict] = None
     die_detections: list = field(default_factory=list)
     ranked_strings: list = field(default_factory=list)
+    unpacking: Optional[UnpackingResult] = None
 
 
 @dataclass
@@ -83,6 +93,8 @@ class Case:
         pe_metadata = PEMetadata(**pe_metadata_data) if pe_metadata_data else None
         elf_metadata_data = static_data.get("elf_metadata")
         elf_metadata = ELFMetadata(**elf_metadata_data) if elf_metadata_data else None
+        unpacking_data = static_data.get("unpacking")
+        unpacking = UnpackingResult(**unpacking_data) if unpacking_data else None
         static = StaticSection(
             pe_metadata=pe_metadata,
             elf_metadata=elf_metadata,
@@ -93,6 +105,7 @@ class Case:
             classification=static_data.get("classification"),
             die_detections=static_data.get("die_detections", []),
             ranked_strings=static_data.get("ranked_strings", []),
+            unpacking=unpacking,
         )
         return cls(identity=identity, static=static)
 
