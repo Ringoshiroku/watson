@@ -60,9 +60,8 @@ _PIP_FAILURE_HINTS = (
     (
         "externally-managed-environment",
         "hint: pip refused because this Python is externally managed (PEP 668). "
-        "Confirm 'watson setup' is really running inside your venv (see the "
-        "interpreter path above), or create/activate one: "
-        "python3 -m venv .venv && source .venv/bin/activate",
+        "Confirm the Python running this command is really inside your venv, "
+        "or create/activate one: python3 -m venv .venv && source .venv/bin/activate",
     ),
     (
         "setuptools.build_meta",
