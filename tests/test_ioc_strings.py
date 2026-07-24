@@ -63,6 +63,97 @@ def test_flags_email():
     ]
 
 
+def test_flags_multiple_different_iocs_in_one_short_string():
+    strings = [{"string": "connect 1.2.3.4 via http://evil.com", "source": "static_strings"}]
+
+    result = find_interesting_strings(strings)
+
+    reasons = {item["reason"] for item in result}
+    assert reasons == {"ip", "url"}
+    assert all(item["string"] == "connect 1.2.3.4 via http://evil.com" for item in result)
+
+
+def test_domain_candidate_inside_url_is_not_double_reported():
+    strings = [{"string": "http://evil.example.com/payload.bin", "source": "decoded_strings"}]
+
+    result = find_interesting_strings(strings)
+
+    assert result == [
+        {
+            "string": "http://evil.example.com/payload.bin",
+            "source": "decoded_strings",
+            "reason": "url",
+        }
+    ]
+
+
+def test_domain_candidate_inside_email_is_not_double_reported():
+    strings = [{"string": "attacker@evil-domain.com", "source": "static_strings"}]
+
+    result = find_interesting_strings(strings)
+
+    assert result == [
+        {"string": "attacker@evil-domain.com", "source": "static_strings", "reason": "email"}
+    ]
+
+
+def test_flags_real_domain_with_known_tld():
+    strings = [{"string": "beacon reaches out to cnc.badguy.net", "source": "static_strings"}]
+
+    result = find_interesting_strings(strings)
+
+    assert result == [
+        {
+            "string": "beacon reaches out to cnc.badguy.net",
+            "source": "static_strings",
+            "reason": "domain",
+        }
+    ]
+
+
+def test_does_not_flag_dotnet_namespace_as_domain():
+    strings = [{"string": "System.Windows.Forms", "source": "static_strings"}]
+
+    result = find_interesting_strings(strings)
+
+    assert result == []
+
+
+def test_does_not_flag_filename_as_domain():
+    strings = [{"string": "readme.txt", "source": "static_strings"}]
+
+    result = find_interesting_strings(strings)
+
+    assert result == []
+
+
+def test_flags_mozilla_style_user_agent():
+    strings = [
+        {
+            "string": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "source": "static_strings",
+        }
+    ]
+
+    result = find_interesting_strings(strings)
+
+    assert result == [
+        {
+            "string": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "source": "static_strings",
+            "reason": "user_agent",
+        }
+    ]
+
+
+def test_does_not_flag_bare_version_string_as_user_agent():
+    strings = [{"string": "gcc/9.3.0", "source": "static_strings"}]
+
+    result = find_interesting_strings(strings)
+
+    assert result == []
+
+
 def test_excludes_boring_strings():
     strings = [{"string": "hello from watson test fixture", "source": "static_strings"}]
 
@@ -116,9 +207,12 @@ def test_flags_real_ip_embedded_in_longer_dotted_run_is_not_falsely_rejected():
     assert result == [{"string": "192.168.1.1", "source": "static_strings", "reason": "ip"}]
 
 
-def test_does_not_flag_matches_inside_very_long_strings():
-    # real false positive: a multi-hundred character CLI usage-help string
-    # containing an incidental "C:\..." substring isn't a useful IOC on its own
+def test_scans_long_strings_and_extracts_compact_matches_instead_of_skipping():
+    # same motivating case as before (a long CLI usage-help string), but the
+    # behavior is now to extract compact matches rather than skip the whole
+    # string: verified by actually running the regexes against this exact
+    # text, not hand-derived, since the existing windows_path/url patterns'
+    # greedy `\S+` legitimately capture the trailing "]" from the source text
     long_usage_text = (
         "Rubeus.exe asktgt /user:USER </password:PASSWORD> "
         "[/createnetonly:C:\\Windows\\System32\\cmd.exe] [/domain:DOMAIN] "
@@ -129,7 +223,18 @@ def test_does_not_flag_matches_inside_very_long_strings():
 
     result = find_interesting_strings(strings)
 
-    assert result == []
+    assert result == [
+        {
+            "string": "C:\\Windows\\System32\\cmd.exe]",
+            "source": "static_strings",
+            "reason": "windows_path",
+        },
+        {
+            "string": "https://KDC_PROXY/kdcproxy]",
+            "source": "static_strings",
+            "reason": "url",
+        },
+    ]
 
 
 def test_preserves_input_order_and_skips_non_matches():
@@ -143,3 +248,12 @@ def test_preserves_input_order_and_skips_non_matches():
     result = find_interesting_strings(strings)
 
     assert [item["string"] for item in result] == ["192.168.1.1", "attacker@evil-domain.com"]
+
+
+def test_caps_matches_per_string_at_twenty():
+    ips = " ".join(f"10.0.0.{i}" for i in range(1, 26))  # 25 distinct valid IPs, one string
+    strings = [{"string": ips, "source": "static_strings"}]
+
+    result = find_interesting_strings(strings)
+
+    assert len(result) == 20

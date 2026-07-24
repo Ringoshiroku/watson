@@ -36,20 +36,58 @@ _KNOWN_OID_PREFIXES = (
     "1.3.6.1.4.1.311.",
 )
 
-# Checked in this order after the ip check; the first pattern that matches
-# wins (a string is tagged with one reason, even if it could technically
-# match more than one).
 _PATTERNS = (
     ("url", re.compile(r"\b[a-zA-Z][a-zA-Z0-9+.\-]*://\S+")),
     ("registry_key", re.compile(r"\bHKEY_[A-Z_]+\\\S*")),
     ("windows_path", re.compile(r"\b[A-Za-z]:\\\S+")),
     ("email", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")),
+    ("user_agent", re.compile(r"\b[A-Za-z][A-Za-z0-9_.-]*/[0-9][\w.]*\s*\([^()]*\)")),
 )
 
+# label.label...tld shaped. On its own this is far too broad, it matches
+# .NET/Java namespace strings (System.Windows.Forms) and filenames
+# (readme.txt) just as readily as real domains; the TLD-membership check in
+# _find_matches is what actually distinguishes a domain from either of
+# those, since "Forms"/"txt" aren't in _KNOWN_TLDS.
+_DOMAIN_LABEL = r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?"
+_DOMAIN_CANDIDATE = re.compile(rf"\b(?:{_DOMAIN_LABEL}\.)+[a-zA-Z]{{2,24}}\b")
 
-def _looks_like_ip(text: str) -> bool:
-    for match in _DOTTED_RUN.finditer(text):
-        candidate = match.group()
+# A pragmatic floor, not an IANA-complete registry, same spirit as
+# _KNOWN_OID_PREFIXES above: common gTLDs plus ccTLDs actually seen in
+# malware infrastructure and legitimate traffic.
+_KNOWN_TLDS = frozenset({
+    "com", "net", "org", "info", "biz", "name", "pro", "mobi",
+    "io", "co", "me", "tv", "cc", "ws", "app", "dev", "cloud",
+    "online", "site", "xyz", "top", "club", "live", "link", "click",
+    "work", "icu", "buzz", "monster", "fun", "space", "store", "tech",
+    "shop", "vip", "win", "bid", "loan", "download", "stream",
+    "gq", "ga", "cf", "ml", "tk",
+    "gov", "edu", "mil", "int",
+    "us", "uk", "ca", "au", "de", "fr", "jp", "cn", "ru", "in",
+    "br", "it", "es", "nl", "se", "no", "dk", "fi", "pl", "tr",
+    "ir", "kr", "mx", "za", "ch", "at", "be", "pt", "gr", "cz",
+    "hu", "ro", "bg", "ua", "by", "kz", "su", "tw", "hk", "sg",
+    "my", "id", "vn", "th", "ph", "nz", "ie", "is", "lu", "li",
+    "sk", "si", "hr", "rs", "lt", "lv", "ee", "md", "ge", "am",
+    "az", "uz", "pk", "bd", "lk", "np", "kh", "la", "mm", "mn",
+    "ae", "sa", "il", "eg", "ng", "ke", "gh", "tz", "ug", "ma",
+    "dz", "tn", "ly", "sc", "mu", "cy", "mt", "al", "mk", "ba",
+})
+
+# Safety valve: a pathological blob (e.g. an embedded resource with many
+# digit-dot runs) shouldn't be able to produce an unbounded number of
+# entries from one source string.
+_MAX_MATCHES_PER_STRING = 20
+
+
+def _find_matches(text: str) -> list:
+    spans = []  # (start, end, reason, value), in the order patterns are checked
+
+    def _overlaps(start, end):
+        return any(not (end <= s or start >= e) for s, e, _, _ in spans)
+
+    for candidate_match in _DOTTED_RUN.finditer(text):
+        candidate = candidate_match.group()
         segments = candidate.split(".")
         if len(segments) != 4:
             continue
@@ -59,21 +97,45 @@ def _looks_like_ip(text: str) -> bool:
             ipaddress.IPv4Address(candidate)
         except ValueError:
             continue
-        return True
-    return False
+        spans.append((candidate_match.start(), candidate_match.end(), "ip", candidate))
+
+    for reason, pattern in _PATTERNS:
+        for match in pattern.finditer(text):
+            if _overlaps(match.start(), match.end()):
+                continue
+            spans.append((match.start(), match.end(), reason, match.group()))
+
+    for match in _DOMAIN_CANDIDATE.finditer(text):
+        tld = match.group().rsplit(".", 1)[-1].lower()
+        if tld not in _KNOWN_TLDS:
+            continue
+        if _overlaps(match.start(), match.end()):
+            continue
+        spans.append((match.start(), match.end(), "domain", match.group()))
+
+    spans.sort(key=lambda item: item[0])
+    return [(reason, value) for _, _, reason, value in spans[:_MAX_MATCHES_PER_STRING]]
 
 
 def find_interesting_strings(strings: list) -> list:
     interesting = []
     for entry in strings:
         text = entry["string"]
-        if len(text) > _MAX_INTERESTING_LENGTH:
-            continue
-        if _looks_like_ip(text):
-            interesting.append({"string": text, "source": entry["source"], "reason": "ip"})
-            continue
-        for reason, pattern in _PATTERNS:
-            if pattern.search(text):
-                interesting.append({"string": text, "source": entry["source"], "reason": reason})
-                break
+        source = entry["source"]
+        matches = _find_matches(text)
+        if len(text) <= _MAX_INTERESTING_LENGTH:
+            seen_reasons = set()
+            for reason, _ in matches:
+                if reason in seen_reasons:
+                    continue
+                seen_reasons.add(reason)
+                interesting.append({"string": text, "source": source, "reason": reason})
+        else:
+            seen_values = set()
+            for reason, value in matches:
+                key = (reason, value)
+                if key in seen_values:
+                    continue
+                seen_values.add(key)
+                interesting.append({"string": value, "source": source, "reason": reason})
     return interesting
