@@ -501,6 +501,8 @@ def _resolve_out_dir(out_dir: Path | None) -> Path:
 
 def _run_setup() -> int:
     print("Checking optional analysis tools...")
+    in_venv = sys.prefix != sys.base_prefix
+    print(f"Running under: {sys.executable} (virtual environment: {'yes' if in_venv else 'no'})")
     print()
 
     tools = {}

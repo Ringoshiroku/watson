@@ -1,5 +1,6 @@
 import json
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -798,6 +799,20 @@ def test_setup_reports_summary_for_all_five_tools(tmp_path, capsys, monkeypatch)
     assert "diec:" in captured.out
     assert "stringsifter:" in captured.out
     assert "watson analyze" in captured.out
+
+
+def test_setup_prints_interpreter_diagnostic_line(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", tmp_path / "unused-yara-cache")
+    monkeypatch.setattr("watson.cli.CAPA_RULES_CACHE", tmp_path / "unused-capa-cache")
+    monkeypatch.setattr("watson.cli.CAPA_SIGS_REPO_CACHE", tmp_path / "unused-capa-sigs-cache")
+    monkeypatch.setattr("watson.cli.DIE_CACHE", tmp_path / "unused-die-cache")
+
+    exit_code = main(["setup"])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert f"Running under: {sys.executable}" in captured.out
+    assert "virtual environment:" in captured.out
 
 
 def test_setup_non_interactive_fetches_nothing(tmp_path, capsys, monkeypatch):
