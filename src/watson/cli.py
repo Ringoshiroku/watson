@@ -544,6 +544,18 @@ def main(argv: list | None = None) -> int:
         ),
     )
     analyze_parser.add_argument(
+        "-u",
+        "--unpack",
+        action="store_true",
+        default=None,
+        help=(
+            "If Detect It Easy identifies UPX packing, unpack the sample and "
+            "automatically re-analyze the unpacked binary as a second case "
+            "(needs --diec to have run and upx on PATH). Omit to be asked "
+            "interactively."
+        ),
+    )
+    analyze_parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -565,6 +577,7 @@ def main(argv: list | None = None) -> int:
             args.floss,
             args.diec,
             args.rank_strings,
+            args.unpack,
             args.verbose,
         )
 
@@ -621,6 +634,7 @@ def _run_analyze(
     run_floss: bool | None,
     run_die: bool | None,
     run_rank: bool | None,
+    run_unpack: bool | None,
     verbose: bool,
 ) -> int:
     if file_path.is_dir():
@@ -633,6 +647,7 @@ def _run_analyze(
             run_floss,
             run_die,
             run_rank,
+            run_unpack,
             verbose,
         )
 
@@ -643,8 +658,9 @@ def _run_analyze(
     out_dir = _resolve_out_dir(out_dir)
 
     try:
-        case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix = build_case(
-            file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die, run_rank=run_rank
+        case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, resolved_capabilities = build_case(
+            file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die,
+            run_rank=run_rank, run_unpack=run_unpack,
         )
     except (InvalidPEError, InvalidELFError, UnsupportedFormatError) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -653,6 +669,41 @@ def _run_analyze(
     effective_verbose = verbose or forced_verbose
 
     now = datetime.now()
+    unpacked_text_report = None
+
+    if case.static.unpacking is not None and case.static.unpacking.success:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        unpacked_path = out_dir / f"{case.output_basename(now, flags_suffix)}_unpacked{file_path.suffix}"
+        shutil.move(case.static.unpacking.output_path, unpacked_path)
+        case.static.unpacking.output_path = str(unpacked_path)
+
+        attempt_yara, attempt_capa, run_floss_resolved, run_die_resolved, run_rank_resolved = resolved_capabilities
+        (
+            unpacked_case,
+            unpacked_floss_raw,
+            _,
+            unpacked_ranked_strings_full,
+            unpacked_flags_suffix,
+            _,
+        ) = build_case(
+            unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss_resolved, run_die_resolved,
+            attempt_yara, attempt_capa, run_rank_resolved, run_unpack=False,
+        )
+        case.static.unpacking.unpacked_sha256 = unpacked_case.identity.sha256
+
+        unpacked_now = datetime.now()
+        if unpacked_floss_raw is not None:
+            save_raw_output(unpacked_floss_raw, out_dir, unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix))
+        if unpacked_ranked_strings_full is not None:
+            save_ranked_strings(
+                unpacked_ranked_strings_full, out_dir, unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix)
+            )
+        unpacked_text_report = build_text_report(unpacked_case, verbose=effective_verbose)
+        unpacked_case.save(
+            out_dir, unpacked_now, data=build_json_report(unpacked_case),
+            text_report=unpacked_text_report, flags=unpacked_flags_suffix,
+        )
+
     if floss_raw is not None:
         save_raw_output(floss_raw, out_dir, case.output_basename(now, flags_suffix))
     if ranked_strings_full is not None:
@@ -661,6 +712,14 @@ def _run_analyze(
     text_report = build_text_report(case, verbose=effective_verbose)
     case.save(out_dir, now, data=build_json_report(case), text_report=text_report, flags=flags_suffix)
     print(text_report)
+
+    if unpacked_text_report is not None:
+        print()
+        print("=" * 30)
+        print("Unpacked binary analysis")
+        print("=" * 30)
+        print(unpacked_text_report)
+
     return 0
 
 
