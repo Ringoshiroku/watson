@@ -18,25 +18,35 @@ def scan_file(file_path: Path, rules_dir: Path) -> list:
 
     filepaths = {f"rule_{i}": str(f) for i, f in enumerate(rule_files)}
     try:
-        rulesets = [yara.compile(filepaths=filepaths)]
+        ruleset = yara.compile(filepaths=filepaths)
     except yara.Error:
         # One or more individual rule files are broken (common in large community
-        # rule repos); fall back to compiling each file on its own and skip only
-        # the ones that fail, rather than losing every rule in the directory.
-        # This does mean cross-file `include` references won't resolve in the
-        # fallback path, only the all-good batch compile above preserves those.
-        rulesets = []
+        # rule repos). Test-compile each file on its own to find which ones are
+        # broken, then do a single batch recompile of just the good files.
+        # Keeping each file as its own separate compiled Rules object (the
+        # previous approach here) multiplies libyara's per-object overhead by
+        # the file count: on the default community ruleset (500+ files) that
+        # reached multiple gigabytes of memory and could get the process
+        # OOM-killed, versus tens of megabytes for one batch compile of the
+        # same rules.
+        good_files = []
         errors = []
         for rule_file in rule_files:
             try:
-                rulesets.append(yara.compile(filepath=str(rule_file)))
+                yara.compile(filepath=str(rule_file))
+                good_files.append(rule_file)
             except yara.Error as exc:
                 errors.append(f"{rule_file}: {exc}")
-        if not rulesets:
+        if not good_files:
             raise YaraScanError("; ".join(errors))
+        good_filepaths = {f"rule_{i}": str(f) for i, f in enumerate(good_files)}
+        try:
+            ruleset = yara.compile(filepaths=good_filepaths)
+        except yara.Error as exc:
+            raise YaraScanError(str(exc)) from exc
 
     try:
-        matches = [match for ruleset in rulesets for match in ruleset.match(str(file_path))]
+        matches = ruleset.match(str(file_path))
     except yara.Error as exc:
         raise YaraScanError(str(exc)) from exc
 

@@ -61,6 +61,29 @@ _FIXTURE_RULE = (
 )
 
 
+def test_scan_file_matches_all_good_rules_after_skipping_one_malformed_rule(tmp_path, compiled_pe):
+    mixed_rules_dir = tmp_path / "mixed_rules_multi"
+    mixed_rules_dir.mkdir()
+    (mixed_rules_dir / "bad.yar").write_text(
+        "rule broken { condition: this_is_not_a_real_identifier }"
+    )
+    (mixed_rules_dir / "good_one.yar").write_text(_FIXTURE_RULE)
+    (mixed_rules_dir / "good_two.yar").write_text(
+        "rule watson_test_fixture_second\n"
+        "{\n"
+        "    strings:\n"
+        '        $a = "hello from watson test fixture"\n'
+        "    condition:\n"
+        "        $a\n"
+        "}\n"
+    )
+
+    matches = scan_file(compiled_pe, mixed_rules_dir)
+
+    matched_rule_names = {match["rule"] for match in matches}
+    assert matched_rule_names == {"watson_test_fixture_string", "watson_test_fixture_second"}
+
+
 def test_scan_file_finds_rules_in_nested_subdirectories(tmp_path, compiled_pe):
     rules_dir = tmp_path / "community_rules"
     nested = rules_dir / "malware" / "trojans"
