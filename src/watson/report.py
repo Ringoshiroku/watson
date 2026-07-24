@@ -271,6 +271,20 @@ def build_text_report(case: Case, verbose: bool = False) -> str:
             line += f" ({reason})"
         lines.append(line)
 
+    if case.static.unpacking is not None:
+        lines.append("")
+        lines.append("Unpacking")
+        lines.append("-" * 9)
+        u = case.static.unpacking
+        lines.append(f"  tool: {u.tool}")
+        lines.append(f"  result: {'succeeded' if u.success else 'failed'}")
+        if u.reason:
+            lines.append(f"  reason: {u.reason}")
+        if u.output_path:
+            lines.append(f"  output: {u.output_path}")
+        if u.unpacked_sha256:
+            lines.append(f"  unpacked sha256: {u.unpacked_sha256}")
+
     lines.append("")
     lines.append("YARA Matches")
     lines.append("-" * 12)
