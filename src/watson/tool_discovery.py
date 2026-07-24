@@ -56,11 +56,38 @@ def select_options(prompt: str, options: list, all_key: str = "a", none_key: str
     return Selection(keys={key for key, _ in options if key in answer}, via_all_shorthand=False)
 
 
+_PIP_FAILURE_HINTS = (
+    (
+        "externally-managed-environment",
+        "hint: pip refused because this Python is externally managed (PEP 668). "
+        "Confirm 'watson setup' is really running inside your venv (see the "
+        "interpreter path above), or create/activate one: "
+        "python3 -m venv .venv && source .venv/bin/activate",
+    ),
+    (
+        "setuptools.build_meta",
+        "hint: pip's build step couldn't find setuptools (common on Python 3.12+ "
+        "venvs, which no longer bundle it). Try: "
+        "pip install --upgrade pip setuptools wheel",
+    ),
+)
+
+
 def _offer_pip_install(name: str, pip_package: str) -> bool:
     answer = input(f"{name} is not installed. install it now with 'pip install {pip_package}'? [y/N] ")
     if answer.strip().lower() != "y":
         return False
-    result = subprocess.run([sys.executable, "-m", "pip", "install", pip_package])
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", pip_package],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    print(result.stdout, end="")
+    if result.returncode != 0:
+        for signature, hint in _PIP_FAILURE_HINTS:
+            if signature in result.stdout:
+                print(hint)
     return result.returncode == 0
 
 

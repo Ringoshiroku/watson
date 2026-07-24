@@ -36,6 +36,81 @@ def test_find_binary_reports_pip_install_hint_when_missing_with_pip_package():
     assert "pip install some-package" in status.reason
 
 
+def test_find_binary_prints_venv_hint_when_pip_install_fails_externally_managed(monkeypatch, capsys):
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+
+    fake_result = subprocess.CompletedProcess(
+        args=["pip", "install", "some-package"],
+        returncode=1,
+        stdout="error: externally-managed-environment\n",
+    )
+    monkeypatch.setattr("watson.tool_discovery.subprocess.run", lambda *a, **k: fake_result)
+
+    status = find_binary("definitely-not-a-real-watson-tool-xyz", pip_package="some-package")
+
+    assert status.available is False
+    captured = capsys.readouterr()
+    assert "PEP 668" in captured.out
+    assert "python3 -m venv" in captured.out
+
+
+def test_find_binary_prints_setuptools_hint_when_pip_install_fails_backend_unavailable(monkeypatch, capsys):
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+
+    fake_result = subprocess.CompletedProcess(
+        args=["pip", "install", "some-package"],
+        returncode=1,
+        stdout="BackendUnavailable: Cannot import 'setuptools.build_meta'\n",
+    )
+    monkeypatch.setattr("watson.tool_discovery.subprocess.run", lambda *a, **k: fake_result)
+
+    status = find_binary("definitely-not-a-real-watson-tool-xyz", pip_package="some-package")
+
+    assert status.available is False
+    captured = capsys.readouterr()
+    assert "pip install --upgrade pip setuptools wheel" in captured.out
+
+
+def test_find_binary_prints_no_hint_for_unrelated_pip_failure(monkeypatch, capsys):
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+
+    fake_result = subprocess.CompletedProcess(
+        args=["pip", "install", "some-package"],
+        returncode=1,
+        stdout="ERROR: Could not find a version that satisfies the requirement some-package\n",
+    )
+    monkeypatch.setattr("watson.tool_discovery.subprocess.run", lambda *a, **k: fake_result)
+
+    status = find_binary("definitely-not-a-real-watson-tool-xyz", pip_package="some-package")
+
+    assert status.available is False
+    captured = capsys.readouterr()
+    assert "hint:" not in captured.out
+
+
+def test_offer_pip_install_prints_captured_output_and_returns_true_on_success(monkeypatch, capsys):
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+
+    fake_result = subprocess.CompletedProcess(
+        args=["pip", "install", "some-package"],
+        returncode=0,
+        stdout="Successfully installed some-package-1.0\n",
+    )
+    monkeypatch.setattr("watson.tool_discovery.subprocess.run", lambda *a, **k: fake_result)
+
+    from watson.tool_discovery import _offer_pip_install
+
+    result = _offer_pip_install("some-tool", "some-package")
+
+    assert result is True
+    captured = capsys.readouterr()
+    assert "Successfully installed some-package-1.0" in captured.out
+    assert "hint:" not in captured.out
+
+
 def test_find_binary_uses_override_path_when_given(tmp_path):
     fake_binary = tmp_path / "fake_tool"
     fake_binary.write_text("#!/bin/sh\necho hi\n")
