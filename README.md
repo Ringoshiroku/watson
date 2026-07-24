@@ -12,6 +12,29 @@ the sample.
 Requires Python 3.10 or later.
 
 ```
+git clone https://github.com/Ringoshiroku/watson.git
+cd watson
+./install.sh
+```
+
+This creates a `.venv` virtual environment, installs watson and its
+dev dependencies into it, and runs `watson setup` to check/install the
+optional analysis tools (yara-python, capa, FLOSS, DIE, StringSifter).
+Safe to re-run.
+
+In future shells, activate the virtual environment before running
+watson:
+
+```
+source .venv/bin/activate
+```
+
+Prefer to manage the environment yourself, or on native Windows
+(`install.sh` needs bash: use WSL or Git Bash, or install manually)?
+
+```
+python3 -m venv .venv
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
 pip install -e ".[dev]"
 ```
 
