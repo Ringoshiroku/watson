@@ -54,6 +54,11 @@ CAPABILITY_OPTIONS = [
 ]
 
 
+def _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank) -> str:
+    selected = {"y": attempt_yara, "c": attempt_capa, "f": run_floss, "d": run_die, "r": run_rank}
+    return "".join(key for key, _ in CAPABILITY_OPTIONS if selected[key])
+
+
 def _die_install_hint() -> str:
     system = platform.system()
     if system == "Linux":
@@ -386,7 +391,8 @@ def build_case(
         die_detections=die_detections,
         ranked_strings=(ranked_strings_full or [])[:20],
     )
-    return Case(identity=identity, static=static), floss_raw, forced_verbose, ranked_strings_full
+    flags_suffix = _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank)
+    return Case(identity=identity, static=static), floss_raw, forced_verbose, ranked_strings_full, flags_suffix
 
 
 def main(argv: list | None = None) -> int:
@@ -559,7 +565,7 @@ def _run_analyze(
     out_dir = _resolve_out_dir(out_dir)
 
     try:
-        case, floss_raw, forced_verbose, ranked_strings_full = build_case(
+        case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix = build_case(
             file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die, run_rank=run_rank
         )
     except (InvalidPEError, InvalidELFError, UnsupportedFormatError) as exc:
@@ -570,12 +576,12 @@ def _run_analyze(
 
     now = datetime.now()
     if floss_raw is not None:
-        save_raw_output(floss_raw, out_dir, case.output_basename(now))
+        save_raw_output(floss_raw, out_dir, case.output_basename(now, flags_suffix))
     if ranked_strings_full is not None:
-        save_ranked_strings(ranked_strings_full, out_dir, case.output_basename(now))
+        save_ranked_strings(ranked_strings_full, out_dir, case.output_basename(now, flags_suffix))
 
     text_report = build_text_report(case, verbose=effective_verbose)
-    case.save(out_dir, now, data=build_json_report(case), text_report=text_report)
+    case.save(out_dir, now, data=build_json_report(case), text_report=text_report, flags=flags_suffix)
     print(text_report)
     return 0
 
@@ -615,6 +621,7 @@ def _run_batch(
         rules_dir, capa_rules_dir, run_floss, run_die, None, None, run_rank, "this batch"
     )
     effective_verbose = verbose or forced_verbose
+    flags_suffix = _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank)
 
     total = len(files)
     analyzed = 0
@@ -623,7 +630,7 @@ def _run_batch(
 
     for index, file_path in enumerate(files, start=1):
         try:
-            case, floss_raw, _, ranked_strings_full = build_case(
+            case, floss_raw, _, ranked_strings_full, _ = build_case(
                 file_path,
                 rules_dir,
                 capa_rules_dir,
@@ -647,12 +654,12 @@ def _run_batch(
 
         now = datetime.now()
         if floss_raw is not None:
-            save_raw_output(floss_raw, out_dir, case.output_basename(now))
+            save_raw_output(floss_raw, out_dir, case.output_basename(now, flags_suffix))
         if ranked_strings_full is not None:
-            save_ranked_strings(ranked_strings_full, out_dir, case.output_basename(now))
+            save_ranked_strings(ranked_strings_full, out_dir, case.output_basename(now, flags_suffix))
 
         text_report = build_text_report(case, verbose=effective_verbose)
-        case.save(out_dir, now, data=build_json_report(case), text_report=text_report)
+        case.save(out_dir, now, data=build_json_report(case), text_report=text_report, flags=flags_suffix)
 
         analyzed += 1
         verdict = case.static.classification["verdict"]
