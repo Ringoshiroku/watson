@@ -313,6 +313,56 @@ def test_classify_unsigned_and_packed_stack_two_tiers():
     assert result["risk"] == "high"
 
 
+def test_classify_die_packer_name_alone_bumps_risk_tier_up_one_step():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches,
+        capabilities=[],
+        likely_packed=False,
+        tools={},
+        die_packer_names=[".NET Reactor"],
+    )
+
+    assert result["risk"] == "medium"
+
+
+def test_classify_die_packer_name_alone_adds_die_specific_reasoning_line():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches,
+        capabilities=[],
+        likely_packed=False,
+        tools={},
+        die_packer_names=[".NET Reactor"],
+    )
+
+    assert (
+        "risk raised one tier because Detect It Easy identified a known packer/protector: '.NET Reactor'"
+        in result["reasoning"]
+    )
+
+
+def test_classify_entropy_and_die_signal_together_still_bump_only_one_tier():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches,
+        capabilities=[],
+        likely_packed=True,
+        tools={},
+        die_packer_names=["UPX"],
+    )
+
+    assert result["risk"] == "medium"
+    assert (
+        "risk raised one tier because the sample is likely packed (high section entropy) "
+        "and Detect It Easy identified a known packer/protector: 'UPX'"
+        in result["reasoning"]
+    )
+
+
 def test_classify_unsigned_bump_caps_at_high():
     yara_matches = [{"rule": "generic_ransomware_dropper", "tags": [], "matches": []}]
 
