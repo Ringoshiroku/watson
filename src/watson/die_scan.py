@@ -72,3 +72,17 @@ def _reshape_detects(data: dict) -> list:
             )
         detects.append({"filetype": detect.get("filetype"), "values": values})
     return detects
+
+
+_PACKER_DETECT_TYPES = {"packer", "protector"}
+
+
+def identify_packers(detections: list) -> list:
+    names = []
+    for detect in detections:
+        for value in detect.get("values") or []:
+            if value.get("type") in _PACKER_DETECT_TYPES:
+                name = value.get("name")
+                if name and name not in names:
+                    names.append(name)
+    return names
