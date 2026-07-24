@@ -723,7 +723,7 @@ def _run_analyze(
     return 0
 
 
-def _build_batch_summary(total: int, analyzed: int, skipped: int, failed: list) -> str:
+def _build_batch_summary(total: int, analyzed: int, skipped: int, failed: list, unpacked: int) -> str:
     lines = [
         "Batch summary",
         "-------------",
@@ -731,6 +731,7 @@ def _build_batch_summary(total: int, analyzed: int, skipped: int, failed: list) 
         f"  analyzed: {analyzed}",
         f"  skipped (not a valid PE or ELF): {skipped}",
         f"  failed: {len(failed)}",
+        f"  unpacked: {unpacked}",
     ]
     if failed:
         lines.append("")
@@ -749,6 +750,7 @@ def _run_batch(
     run_floss: bool | None,
     run_die: bool | None,
     run_rank: bool | None,
+    run_unpack: bool | None,
     verbose: bool,
 ) -> int:
     out_dir = _resolve_out_dir(out_dir)
@@ -758,16 +760,17 @@ def _run_batch(
         rules_dir, capa_rules_dir, run_floss, run_die, None, None, run_rank, "this batch"
     )
     effective_verbose = verbose or forced_verbose
-    flags_suffix = _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank)
+    flags_suffix = _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank, bool(run_unpack))
 
     total = len(files)
     analyzed = 0
     skipped = 0
     failed = []
+    unpacked = 0
 
     for index, file_path in enumerate(files, start=1):
         try:
-            case, floss_raw, _, ranked_strings_full, _ = build_case(
+            case, floss_raw, _, ranked_strings_full, _, resolved_capabilities = build_case(
                 file_path,
                 rules_dir,
                 capa_rules_dir,
@@ -777,6 +780,7 @@ def _run_batch(
                 attempt_yara,
                 attempt_capa,
                 run_rank,
+                run_unpack=run_unpack,
             )
         except (InvalidPEError, InvalidELFError, UnsupportedFormatError):
             skipped += 1
@@ -790,6 +794,44 @@ def _run_batch(
             continue
 
         now = datetime.now()
+        unpacked_text_note = ""
+
+        if case.static.unpacking is not None and case.static.unpacking.success:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            unpacked_path = out_dir / f"{case.output_basename(now, flags_suffix)}_unpacked{file_path.suffix}"
+            shutil.move(case.static.unpacking.output_path, unpacked_path)
+            case.static.unpacking.output_path = str(unpacked_path)
+
+            r_attempt_yara, r_attempt_capa, r_run_floss, r_run_die, r_run_rank = resolved_capabilities
+            (
+                unpacked_case,
+                unpacked_floss_raw,
+                _,
+                unpacked_ranked_strings_full,
+                unpacked_flags_suffix,
+                _,
+            ) = build_case(
+                unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, r_run_floss, r_run_die,
+                r_attempt_yara, r_attempt_capa, r_run_rank, run_unpack=False,
+            )
+            case.static.unpacking.unpacked_sha256 = unpacked_case.identity.sha256
+
+            unpacked_now = datetime.now()
+            if unpacked_floss_raw is not None:
+                save_raw_output(unpacked_floss_raw, out_dir, unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix))
+            if unpacked_ranked_strings_full is not None:
+                save_ranked_strings(
+                    unpacked_ranked_strings_full, out_dir,
+                    unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix),
+                )
+            unpacked_text_report = build_text_report(unpacked_case, verbose=effective_verbose)
+            unpacked_case.save(
+                out_dir, unpacked_now, data=build_json_report(unpacked_case),
+                text_report=unpacked_text_report, flags=unpacked_flags_suffix,
+            )
+            unpacked += 1
+            unpacked_text_note = " [unpacked]"
+
         if floss_raw is not None:
             save_raw_output(floss_raw, out_dir, case.output_basename(now, flags_suffix))
         if ranked_strings_full is not None:
@@ -801,9 +843,9 @@ def _run_batch(
         analyzed += 1
         verdict = case.static.classification["verdict"]
         risk = case.static.classification["risk"]
-        print(f"[{index}/{total}] {file_path.name}: {verdict} ({risk} risk)", file=sys.stderr)
+        print(f"[{index}/{total}] {file_path.name}: {verdict} ({risk} risk){unpacked_text_note}", file=sys.stderr)
 
-    summary = _build_batch_summary(total, analyzed, skipped, failed)
+    summary = _build_batch_summary(total, analyzed, skipped, failed, unpacked)
     print(summary)
     out_dir.mkdir(parents=True, exist_ok=True)
     summary_timestamp = datetime.now().strftime("%H-%M-%S-%d-%m-%Y")
