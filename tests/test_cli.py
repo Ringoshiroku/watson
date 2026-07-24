@@ -286,10 +286,12 @@ def test_analyze_case_filename_uses_timestamp_and_binary_name_not_hash(
     name = case_files[0].name
     case_data = json.loads(case_files[0].read_text())
     md5 = case_data["identity"]["md5"]
-    # hh-mm-ss-DD-MM-YYYY-<sanitized name>-<md5>.json, dots replaced with
-    # dashes so it never reads like a double extension
+    # hh-mm-ss-DD-MM-YYYY-<sanitized name>-<md5>-<flags>.json, dots replaced
+    # with dashes so it never reads like a double extension. Neither -y nor
+    # -c is passed, but with no analysis-selection prompt in a non-interactive
+    # session both default to attempted, hence the "-yc" flags suffix.
     assert name.count(".") == 1
-    assert name.endswith(f"-{compiled_pe.stem}-{compiled_pe.suffix.lstrip('.')}-{md5}.json")
+    assert name.endswith(f"-{compiled_pe.stem}-{compiled_pe.suffix.lstrip('.')}-{md5}-yc.json")
     sha256_only_name = out_dir / f"{case_data['identity']['sha256']}.json"
     assert not sha256_only_name.exists()
 
@@ -338,6 +340,20 @@ def test_analyze_prompts_which_analyses_to_run_when_nothing_specified(
     assert "yara: unavailable" in captured.out
     assert "capa: unavailable" in captured.out
     assert "floss: unavailable" in captured.out
+
+
+def test_analyze_saves_output_files_with_capability_flags_suffix(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    # answer "y" to the analysis-selection prompt: only YARA selected
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+
+    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    saved_files = list(out_dir.glob("*-y.json"))
+    assert len(saved_files) == 1
 
 
 def test_analyze_selecting_yara_when_missing_reports_unavailable_without_fetch_prompt(
@@ -858,7 +874,7 @@ def test_build_case_respects_explicit_run_yara_and_run_capa_false(compiled_pe, m
 
     monkeypatch.setattr("builtins.input", fail_if_called)
 
-    case, floss_raw, forced_verbose, ranked_strings_full = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -934,13 +950,39 @@ def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_r
     answers = iter(["n", "n", "n"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
 
-    case, floss_raw, forced_verbose, ranked_strings_full = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, _ = build_case(
         compiled_pe, run_yara=False, run_capa=False
     )
 
     assert case.static.tools["floss"]["reason"] == "floss not requested (use --floss)"
     assert case.static.tools["diec"]["reason"] == "diec not requested (use --diec)"
     assert case.static.tools["stringsifter"]["reason"] == "stringsifter not requested (use --rank-strings)"
+
+
+def test_build_case_returns_flags_suffix_matching_selected_capabilities(compiled_pe):
+    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix = build_case(
+        compiled_pe,
+        run_yara=True,
+        run_capa=False,
+        run_floss=True,
+        run_die=False,
+        run_rank=False,
+    )
+
+    assert flags_suffix == "yf"
+
+
+def test_build_case_returns_empty_flags_suffix_when_nothing_selected(compiled_pe):
+    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=False,
+        run_rank=False,
+    )
+
+    assert flags_suffix == ""
 
 
 def test_analyze_directory_recursively_finds_and_analyzes_files(compiled_pe, tmp_path, capsys, monkeypatch):
@@ -990,6 +1032,27 @@ def test_analyze_directory_asks_analysis_selection_once_for_whole_batch(
     assert call_count["n"] == 1
     captured = capsys.readouterr()
     assert captured.out.count("which analyses do you want to run?") == 1
+
+
+def test_analyze_directory_uses_same_flags_suffix_for_every_file_in_batch(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    samples_dir = tmp_path / "samples"
+    samples_dir.mkdir()
+    shutil.copy(compiled_pe, samples_dir / "one.exe")
+    shutil.copy(compiled_pe, samples_dir / "two.exe")
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    # answer "y" to the analysis-selection prompt: only YARA selected, for the whole batch
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+
+    exit_code = main(["analyze", str(samples_dir), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith("_floss.json")]
+    assert len(case_files) == 2
+    assert all(f.name.endswith("-y.json") for f in case_files)
 
 
 def test_analyze_directory_asks_floss_and_die_confirmation_once_each(

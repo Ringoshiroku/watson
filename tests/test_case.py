@@ -47,6 +47,36 @@ def test_case_save_writes_json_named_by_timestamp_and_filename(tmp_path):
     assert on_disk["identity"]["sha256"] == "a" * 64
 
 
+def test_case_save_appends_flags_suffix_when_given(tmp_path):
+    from datetime import datetime
+
+    case = _sample_case()
+
+    out_path = case.save(tmp_path, now=datetime(2026, 7, 9, 14, 23, 5), flags="ycfdr")
+
+    assert out_path == tmp_path / f"14-23-05-09-07-2026-sample-exe-{'c' * 32}-ycfdr.json"
+
+
+def test_case_output_basename_appends_flags_suffix_when_given():
+    from datetime import datetime
+
+    case = _sample_case()
+
+    basename = case.output_basename(now=datetime(2026, 7, 9, 14, 23, 5), flags="yc")
+
+    assert basename == f"14-23-05-09-07-2026-sample-exe-{'c' * 32}-yc"
+
+
+def test_case_output_basename_omits_suffix_when_flags_empty():
+    from datetime import datetime
+
+    case = _sample_case()
+
+    basename = case.output_basename(now=datetime(2026, 7, 9, 14, 23, 5))
+
+    assert basename == f"14-23-05-09-07-2026-sample-exe-{'c' * 32}"
+
+
 def test_case_save_sanitizes_dots_so_it_never_looks_like_a_double_extension(tmp_path):
     from datetime import datetime
 

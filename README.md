@@ -116,17 +116,20 @@ what you want you never have to go through a prompt again:
   the whole run. See "Batch/directory mode" below.
 - `-o DIR`, `--out DIR`, directory to write output to (default `cases`,
   asked interactively if omitted). Always writes
-  `<out>/<timestamp>-<name>-<md5>.json` (the full case); also writes
-  `<out>/<timestamp>-<name>-<md5>_floss.json` (FLOSS's complete,
-  unfiltered string dump, easily thousands of entries) when FLOSS runs.
-  `<timestamp>` is `hh-mm-ss-DD-MM-YYYY` at the moment the run finished,
-  `<name>` is the scanned file's own name with dots swapped for dashes
-  (so `rb.exe` becomes `rb-exe`, never a `rb.exe.json`-style double
-  extension), `<md5>` is the sample's MD5. Named this way instead of by
-  hash alone so the filename itself tells you what it is. Also always
-  writes `<out>/<timestamp>-<name>-<md5>.txt`, the same readable report
-  printed to stdout, saved to disk so you don't have to open the JSON to
-  read it back later.
+  `<out>/<timestamp>-<name>-<md5>-<flags>.json` (the full case); also
+  writes `<out>/<timestamp>-<name>-<md5>-<flags>_floss.json` (FLOSS's
+  complete, unfiltered string dump, easily thousands of entries) when
+  FLOSS runs. `<timestamp>` is `hh-mm-ss-DD-MM-YYYY` at the moment the
+  run finished, `<name>` is the scanned file's own name with dots
+  swapped for dashes (so `rb.exe` becomes `rb-exe`, never a
+  `rb.exe.json`-style double extension), `<md5>` is the sample's MD5,
+  `<flags>` is which of `y`/`c`/`f`/`d`/`r` were selected for this run
+  (e.g. `yc`, `ycfdr`, omitted entirely along with its leading dash when
+  nothing was selected). Named this way instead of by hash alone so the
+  filename itself tells you what it is and what was run on it. Also
+  always writes `<out>/<timestamp>-<name>-<md5>-<flags>.txt`, the same
+  readable report printed to stdout, saved to disk so you don't have to
+  open the JSON to read it back later.
 - `-y DIR`, `--rules-dir DIR`, use this exact YARA rule directory instead
   of the cache `watson setup` manages (recurses into subdirectories,
   matches both `.yar` and `.yara`, and skips over any individual rule
@@ -155,7 +158,7 @@ what you want you never have to go through a prompt again:
   using StringSifter's real ML model (needs `-f`/`--floss` to have also
   run; without it, reported unavailable with a clear reason). The top 20
   ranked strings appear in the report, the complete ranking goes to
-  `<out>/<timestamp>-<name>-<md5>_ranked_strings.json`. Omit to be asked
+  `<out>/<timestamp>-<name>-<md5>-<flags>_ranked_strings.json`. Omit to be asked
   interactively.
 - `-v`, `--verbose`, show full YARA match detail (string identifier, hex
   offset, matched bytes) and capa match evidence (the specific feature,
@@ -196,7 +199,7 @@ reason entirely (a suspicious command line, a mutex name, a ransom note)
 without needing to match a fixed pattern. The report shows the top 20
 ranked strings (score plus source); the complete ranking of every string
 FLOSS extracted is written to
-`<out>/<timestamp>-<name>-<md5>_ranked_strings.json`. Needs FLOSS to have
+`<out>/<timestamp>-<name>-<md5>-<flags>_ranked_strings.json`. Needs FLOSS to have
 also run; picking `-r` without `-f` reports it unavailable with a clear
 reason instead of silently doing nothing.
 

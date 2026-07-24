@@ -96,11 +96,12 @@ class Case:
         )
         return cls(identity=identity, static=static)
 
-    def output_basename(self, now: Optional[datetime] = None) -> str:
+    def output_basename(self, now: Optional[datetime] = None, flags: str = "") -> str:
         now = now or datetime.now()
         timestamp = now.strftime("%H-%M-%S-%d-%m-%Y")
         safe_name = _sanitize_filename_component(self.identity.file_name)
-        return f"{timestamp}-{safe_name}-{self.identity.md5}"
+        suffix = f"-{flags}" if flags else ""
+        return f"{timestamp}-{safe_name}-{self.identity.md5}{suffix}"
 
     def save(
         self,
@@ -108,10 +109,11 @@ class Case:
         now: Optional[datetime] = None,
         data: Optional[dict] = None,
         text_report: Optional[str] = None,
+        flags: str = "",
     ) -> Path:
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
-        basename = self.output_basename(now)
+        basename = self.output_basename(now, flags)
         out_path = directory / f"{basename}.json"
         payload = data if data is not None else self.to_dict()
         out_path.write_text(json.dumps(payload, indent=2))
