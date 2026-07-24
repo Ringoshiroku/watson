@@ -356,6 +356,39 @@ def test_analyze_saves_output_files_with_capability_flags_suffix(compiled_pe, tm
     assert len(saved_files) == 1
 
 
+def test_capability_flags_suffix_includes_u_when_unpack_selected():
+    from watson.cli import _capability_flags_suffix
+
+    suffix = _capability_flags_suffix(True, False, False, True, False, True)
+
+    assert suffix == "ydu"
+
+
+def test_capability_options_includes_unpack_letter():
+    from watson.cli import CAPABILITY_OPTIONS
+
+    keys = [key for key, _ in CAPABILITY_OPTIONS]
+
+    assert keys == ["y", "c", "f", "d", "r", "u"]
+
+
+def test_resolve_upx_reports_unavailable_with_install_hint_when_missing(monkeypatch):
+    from watson.cli import _resolve_upx
+
+    original_which = shutil.which
+    monkeypatch.setattr(
+        "watson.tool_discovery.shutil.which",
+        lambda name: None if name == "upx" else original_which(name),
+    )
+    monkeypatch.setattr("watson.cli.platform.system", lambda: "Linux")
+
+    status, path = _resolve_upx(offline=False)
+
+    assert status["available"] is False
+    assert "upx-ucl" in status["reason"]
+    assert path is None
+
+
 def test_analyze_selecting_yara_when_missing_reports_unavailable_without_fetch_prompt(
     compiled_pe, tmp_path, capsys, monkeypatch
 ):

@@ -42,6 +42,11 @@ DIE_CACHE = WATSON_HOME / "tools" / "diec"
 DIE_RELEASE_BASE = f"https://github.com/horsicq/DIE-engine/releases/download/{DIE_VERSION}"
 DIE_WIN64_URL = f"{DIE_RELEASE_BASE}/die_win64_portable_{DIE_VERSION}_x64.zip"
 DIE_WIN32_URL = f"{DIE_RELEASE_BASE}/die_win32_portable_{DIE_VERSION}_x86.zip"
+UPX_VERSION = "5.2.0"
+UPX_CACHE = WATSON_HOME / "tools" / "upx"
+UPX_RELEASE_BASE = f"https://github.com/upx/upx/releases/download/v{UPX_VERSION}"
+UPX_WIN64_URL = f"{UPX_RELEASE_BASE}/upx-{UPX_VERSION}-win64.zip"
+UPX_WIN32_URL = f"{UPX_RELEASE_BASE}/upx-{UPX_VERSION}-win32.zip"
 
 # Same letters as the -y/-c/-f/-d short flags, so what you'd type at the prompt
 # and what you'd pass on the command line to skip it match exactly.
@@ -51,11 +56,15 @@ CAPABILITY_OPTIONS = [
     ("f", "FLOSS string extraction and IOC flagging"),
     ("d", "Detect It Easy packer/compiler/linker detection"),
     ("r", "StringSifter relevance ranking of extracted strings"),
+    ("u", "auto-unpack UPX-packed samples and re-analyze the unpacked binary"),
 ]
 
 
-def _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank) -> str:
-    selected = {"y": attempt_yara, "c": attempt_capa, "f": run_floss, "d": run_die, "r": run_rank}
+def _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_unpack) -> str:
+    selected = {
+        "y": attempt_yara, "c": attempt_capa, "f": run_floss,
+        "d": run_die, "r": run_rank, "u": run_unpack,
+    }
     return "".join(key for key, _ in CAPABILITY_OPTIONS if selected[key])
 
 
@@ -143,6 +152,40 @@ def _resolve_die(offline: bool) -> tuple[dict, str | None]:
     if die_status.available:
         return {"available": True, "reason": None}, die_status.path
     return {"available": False, "reason": _die_install_hint()}, None
+
+
+def _upx_install_hint() -> str:
+    system = platform.system()
+    if system == "Linux":
+        return (
+            "on Debian/Kali/Ubuntu, install with 'sudo apt install upx-ucl'; "
+            "otherwise see https://github.com/upx/upx/releases"
+        )
+    if system == "Windows":
+        return (
+            "install with 'choco install upx' (Chocolatey), or see "
+            "https://github.com/upx/upx/releases"
+        )
+    return "see https://github.com/upx/upx/releases for install instructions"
+
+
+def _resolve_upx(offline: bool) -> tuple[dict, str | None]:
+    upx_status = find_binary("upx", pip_package=None, offline=offline)
+    if not upx_status.available and platform.system() == "Windows":
+        machine = platform.machine().lower()
+        if machine in ("amd64", "x86_64"):
+            archive_url, binary_relpath = UPX_WIN64_URL, f"upx-{UPX_VERSION}-win64/upx.exe"
+        elif machine in ("x86", "i386", "i686"):
+            archive_url, binary_relpath = UPX_WIN32_URL, f"upx-{UPX_VERSION}-win32/upx.exe"
+        else:
+            archive_url, binary_relpath = None, ""
+        if archive_url:
+            upx_status = find_or_fetch_zip_binary(
+                "upx", binary_relpath, cache_dir=UPX_CACHE, archive_url=archive_url, offline=offline
+            )
+    if upx_status.available:
+        return {"available": True, "reason": None}, upx_status.path
+    return {"available": False, "reason": _upx_install_hint()}, None
 
 
 def _resolve_stringsifter(offline: bool) -> dict:
