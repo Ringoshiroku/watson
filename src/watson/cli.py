@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import os
 import platform
+import shutil
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from watson.case import Case, ELFMetadata, Identity, PEMetadata, StaticSection
+from watson.case import Case, ELFMetadata, Identity, PEMetadata, StaticSection, UnpackingResult
 from watson.capa_scan import CapaScanError, scan_file as capa_scan_file
 from watson.die_scan import DieScanError, identify_packers, scan_file as die_scan_file
+from watson import upx_unpack
+from watson.upx_unpack import UpxUnpackError
 from watson.elf_metadata import InvalidELFError, extract_elf_metadata
 from watson.file_format import UnsupportedFormatError, detect_format
 from watson.floss_scan import FlossScanError, flatten_strings, save_raw_output, scan_file as floss_scan_file
@@ -258,6 +263,7 @@ def build_case(
     run_yara: bool | None = None,
     run_capa: bool | None = None,
     run_rank: bool | None = None,
+    run_unpack: bool | None = None,
 ) -> tuple:
     hashes = compute_hashes(file_path)
     file_format = detect_format(file_path)
@@ -412,6 +418,26 @@ def build_case(
             "reason": "diec not requested (use --diec)",
         }
 
+    unpacking = None
+
+    if run_unpack:
+        tools["upx"], resolved_upx_path = _resolve_upx(offline=True)
+        if tools["upx"]["available"] and "UPX" in identify_packers(die_detections):
+            tmp_fd, tmp_path_str = tempfile.mkstemp(suffix=file_path.suffix)
+            os.close(tmp_fd)
+            tmp_path = Path(tmp_path_str)
+            try:
+                upx_unpack.unpack_file(file_path, tmp_path, upx_binary=resolved_upx_path)
+                unpacking = UnpackingResult(tool="upx", success=True, output_path=str(tmp_path))
+            except UpxUnpackError as exc:
+                tmp_path.unlink(missing_ok=True)
+                unpacking = UnpackingResult(tool="upx", success=False, reason=str(exc))
+    else:
+        tools["upx"] = {
+            "available": False,
+            "reason": "unpack not requested (use --unpack)",
+        }
+
     classification = classify(
         yara_matches,
         capabilities,
@@ -433,9 +459,18 @@ def build_case(
         classification=classification,
         die_detections=die_detections,
         ranked_strings=(ranked_strings_full or [])[:20],
+        unpacking=unpacking,
     )
-    flags_suffix = _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank)
-    return Case(identity=identity, static=static), floss_raw, forced_verbose, ranked_strings_full, flags_suffix
+    resolved_capabilities = (attempt_yara, attempt_capa, run_floss, run_die, run_rank)
+    flags_suffix = _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank, bool(run_unpack))
+    return (
+        Case(identity=identity, static=static),
+        floss_raw,
+        forced_verbose,
+        ranked_strings_full,
+        flags_suffix,
+        resolved_capabilities,
+    )
 
 
 def main(argv: list | None = None) -> int:

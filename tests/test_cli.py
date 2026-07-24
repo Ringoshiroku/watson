@@ -907,7 +907,7 @@ def test_build_case_respects_explicit_run_yara_and_run_capa_false(compiled_pe, m
 
     monkeypatch.setattr("builtins.input", fail_if_called)
 
-    case, floss_raw, forced_verbose, ranked_strings_full, _ = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -983,7 +983,7 @@ def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_r
     answers = iter(["n", "n", "n"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
 
-    case, floss_raw, forced_verbose, ranked_strings_full, _ = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, _, _ = build_case(
         compiled_pe, run_yara=False, run_capa=False
     )
 
@@ -993,7 +993,7 @@ def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_r
 
 
 def test_build_case_returns_flags_suffix_matching_selected_capabilities(compiled_pe):
-    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, _ = build_case(
         compiled_pe,
         run_yara=True,
         run_capa=False,
@@ -1006,7 +1006,7 @@ def test_build_case_returns_flags_suffix_matching_selected_capabilities(compiled
 
 
 def test_build_case_returns_empty_flags_suffix_when_nothing_selected(compiled_pe):
-    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1016,6 +1016,124 @@ def test_build_case_returns_empty_flags_suffix_when_nothing_selected(compiled_pe
     )
 
     assert flags_suffix == ""
+
+
+def test_build_case_returns_six_element_tuple_including_resolved_capabilities(compiled_pe):
+    result = build_case(
+        compiled_pe,
+        run_yara=True,
+        run_capa=False,
+        run_floss=True,
+        run_die=False,
+        run_rank=False,
+    )
+
+    assert len(result) == 6
+    resolved_capabilities = result[5]
+    assert resolved_capabilities == (True, False, True, False, False)
+
+
+def test_build_case_does_not_attempt_unpack_when_run_unpack_false(compiled_pe):
+    case, _, _, _, _, _ = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=False,
+        run_rank=False,
+        run_unpack=False,
+    )
+
+    assert case.static.unpacking is None
+
+
+def test_build_case_does_not_attempt_unpack_when_die_not_run(compiled_pe, monkeypatch):
+    monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
+
+    case, _, _, _, _, _ = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=False,
+        run_rank=False,
+        run_unpack=True,
+    )
+
+    assert case.static.unpacking is None
+
+
+def test_build_case_does_not_attempt_unpack_when_die_finds_no_upx(compiled_pe, monkeypatch):
+    monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr("watson.cli.die_scan_file", lambda *a, **k: [])
+
+    case, _, _, _, _, _ = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=True,
+        run_rank=False,
+        run_unpack=True,
+    )
+
+    assert case.static.unpacking is None
+
+
+def test_build_case_populates_unpacking_result_when_upx_detected_and_unpack_succeeds(compiled_pe, monkeypatch, tmp_path):
+    monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "UPX", "version": "4.2.4", "string": None}]}],
+    )
+    monkeypatch.setattr("watson.cli.upx_unpack.unpack_file", lambda file_path, output_path, **k: output_path.write_bytes(b"unpacked"))
+
+    case, _, _, _, _, _ = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=True,
+        run_rank=False,
+        run_unpack=True,
+    )
+
+    assert case.static.unpacking is not None
+    assert case.static.unpacking.tool == "upx"
+    assert case.static.unpacking.success is True
+    assert case.static.unpacking.output_path is not None
+    assert Path(case.static.unpacking.output_path).exists()
+
+
+def test_build_case_records_failure_reason_when_unpack_fails(compiled_pe, monkeypatch):
+    from watson.upx_unpack import UpxUnpackError
+
+    monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "UPX", "version": None, "string": None}]}],
+    )
+
+    def failing_unpack(*a, **k):
+        raise UpxUnpackError("upx exited with code 2")
+
+    monkeypatch.setattr("watson.cli.upx_unpack.unpack_file", failing_unpack)
+
+    case, _, _, _, _, _ = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=True,
+        run_rank=False,
+        run_unpack=True,
+    )
+
+    assert case.static.unpacking.success is False
+    assert case.static.unpacking.reason == "upx exited with code 2"
 
 
 def test_analyze_directory_recursively_finds_and_analyzes_files(compiled_pe, tmp_path, capsys, monkeypatch):
