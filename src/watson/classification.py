@@ -138,10 +138,10 @@ def _verdict(yara_matches: list, capabilities: list) -> str:
     return "unclassified"
 
 
-def _risk(verdict: str, likely_packed: bool, is_unsigned: bool = False) -> str:
+def _risk(verdict: str, likely_packed: bool, die_packer_names: list, is_unsigned: bool = False) -> str:
     tier = _RISK_BY_VERDICT[verdict]
     bumps = 0
-    if likely_packed:
+    if likely_packed or die_packer_names:
         bumps += 1
     if is_unsigned and verdict != "unclassified":
         bumps += 1
@@ -188,12 +188,27 @@ def _yara_reasoning_line(yara_hit: dict) -> str:
     return f"YARA rule '{yara_hit['rule']}' matched{tag_suffix}"
 
 
+def _packed_reasoning_line(likely_packed: bool, die_packer_names: list) -> str:
+    if likely_packed and die_packer_names:
+        return (
+            "risk raised one tier because the sample is likely packed (high section entropy) "
+            f"and Detect It Easy identified a known packer/protector: {_format_rule_names(die_packer_names)}"
+        )
+    if die_packer_names:
+        return (
+            "risk raised one tier because Detect It Easy identified a known packer/protector: "
+            f"{_format_rule_names(die_packer_names)}"
+        )
+    return "risk raised one tier because the sample is likely packed"
+
+
 def _reasoning(
     verdict: str,
     yara_matches: list,
     capabilities: list,
     likely_packed: bool,
     tools: dict,
+    die_packer_names: list,
     is_unsigned: bool = False,
 ) -> list:
     reasoning = []
@@ -201,8 +216,8 @@ def _reasoning(
     if verdict == "unclassified":
         reasoning.append(_tool_reasoning_line("yara", tools))
         reasoning.append(_tool_reasoning_line("capa", tools))
-        if likely_packed:
-            reasoning.append("risk raised one tier because the sample is likely packed")
+        if likely_packed or die_packer_names:
+            reasoning.append(_packed_reasoning_line(likely_packed, die_packer_names))
         return reasoning
 
     if verdict == "trojan":
@@ -288,8 +303,8 @@ def _reasoning(
         "see Capabilities/YARA Matches below for full evidence detail (run with -v for match locations)"
     )
 
-    if likely_packed:
-        reasoning.append("risk raised one tier because the sample is likely packed")
+    if likely_packed or die_packer_names:
+        reasoning.append(_packed_reasoning_line(likely_packed, die_packer_names))
 
     if is_unsigned:
         reasoning.append("risk raised one tier because the sample is unsigned")
@@ -367,9 +382,11 @@ def classify(
     machine: str = "",
     file_format: str = "pe",
     is_unsigned: bool = False,
+    die_packer_names: list = None,
 ) -> dict:
+    die_packer_names = die_packer_names or []
     verdict = _verdict(yara_matches, capabilities)
-    risk = _risk(verdict, likely_packed, is_unsigned)
-    reasoning = _reasoning(verdict, yara_matches, capabilities, likely_packed, tools, is_unsigned)
+    risk = _risk(verdict, likely_packed, die_packer_names, is_unsigned)
+    reasoning = _reasoning(verdict, yara_matches, capabilities, likely_packed, tools, die_packer_names, is_unsigned)
     detection = _detection(verdict, yara_matches, capabilities, machine, file_format)
     return {"verdict": verdict, "risk": risk, "reasoning": reasoning, "detection": detection}

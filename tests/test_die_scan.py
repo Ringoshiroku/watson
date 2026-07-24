@@ -79,3 +79,48 @@ def test_scan_file_raises_die_scan_error_for_unusable_binary_path(tmp_path):
 
     with pytest.raises(DieScanError):
         scan_file(fake_file, diec_binary=str(missing_binary))
+
+
+def test_identify_packers_includes_packer_typed_entries():
+    detections = [
+        {"filetype": "PE64", "values": [{"type": "packer", "name": "UPX", "version": "3.96", "string": None}]}
+    ]
+
+    assert die_scan.identify_packers(detections) == ["UPX"]
+
+
+def test_identify_packers_includes_protector_typed_entries():
+    detections = [
+        {"filetype": "PE64", "values": [{"type": "protector", "name": ".NET Reactor", "version": None, "string": None}]}
+    ]
+
+    assert die_scan.identify_packers(detections) == [".NET Reactor"]
+
+
+def test_identify_packers_excludes_compiler_and_linker_typed_entries():
+    detections = [
+        {
+            "filetype": "PE64",
+            "values": [
+                {"type": "compiler", "name": "Microsoft Visual C/C++", "version": None, "string": None},
+                {"type": "linker", "name": "Microsoft Linker", "version": None, "string": None},
+            ],
+        }
+    ]
+
+    assert die_scan.identify_packers(detections) == []
+
+
+def test_identify_packers_skips_entries_with_no_name():
+    detections = [{"filetype": "PE64", "values": [{"type": "packer", "name": None, "version": None, "string": None}]}]
+
+    assert die_scan.identify_packers(detections) == []
+
+
+def test_identify_packers_deduplicates_names_across_detects():
+    detections = [
+        {"filetype": "PE64", "values": [{"type": "packer", "name": "UPX", "version": "3.96", "string": None}]},
+        {"filetype": "PE64", "values": [{"type": "packer", "name": "UPX", "version": "3.96", "string": None}]},
+    ]
+
+    assert die_scan.identify_packers(detections) == ["UPX"]

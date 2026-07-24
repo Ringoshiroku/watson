@@ -8,7 +8,7 @@ from pathlib import Path
 
 from watson.case import Case, ELFMetadata, Identity, PEMetadata, StaticSection
 from watson.capa_scan import CapaScanError, scan_file as capa_scan_file
-from watson.die_scan import DieScanError, scan_file as die_scan_file
+from watson.die_scan import DieScanError, identify_packers, scan_file as die_scan_file
 from watson.elf_metadata import InvalidELFError, extract_elf_metadata
 from watson.file_format import UnsupportedFormatError, detect_format
 from watson.floss_scan import FlossScanError, flatten_strings, save_raw_output, scan_file as floss_scan_file
@@ -372,6 +372,7 @@ def build_case(
         machine_for_classification,
         file_format,
         is_unsigned=is_unsigned,
+        die_packer_names=identify_packers(die_detections),
     )
 
     static = StaticSection(
