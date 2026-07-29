@@ -7,6 +7,13 @@ class YaraScanError(Exception):
     """Raised when a YARA rule file fails to compile or a scan fails."""
 
 
+# Community rules (e.g. utils/domain.yar's `/([\w\.-]+)/`) are often loose
+# enough to match single characters or the empty string all over a binary;
+# without these bounds a single such rule can produce millions of instances.
+_MIN_MATCH_LENGTH = 4
+_MAX_INSTANCES_PER_IDENTIFIER = 20
+
+
 def scan_file(file_path: Path, rules_dir: Path) -> list:
     import yara
 
@@ -50,19 +57,42 @@ def scan_file(file_path: Path, rules_dir: Path) -> list:
     except yara.Error as exc:
         raise YaraScanError(str(exc)) from exc
 
-    return [
-        {
-            "rule": match.rule,
-            "tags": list(match.tags),
-            "matches": [
-                {
-                    "identifier": string_match.identifier,
-                    "offset": instance.offset,
-                    "matched_data": instance.matched_data.decode("utf-8", errors="replace"),
-                }
-                for string_match in match.strings
-                for instance in string_match.instances
-            ],
-        }
-        for match in matches
-    ]
+    results = []
+    for match in matches:
+        if match.meta.get("hide"):
+            continue
+
+        by_identifier = {}
+        for string_match in match.strings:
+            for instance in string_match.instances:
+                matched_data = instance.matched_data.decode("utf-8", errors="replace")
+                if len(matched_data) < _MIN_MATCH_LENGTH:
+                    continue
+                by_identifier.setdefault(string_match.identifier, []).append(
+                    {
+                        "identifier": string_match.identifier,
+                        "offset": instance.offset,
+                        "matched_data": matched_data,
+                    }
+                )
+
+        flattened = []
+        for identifier, instances in by_identifier.items():
+            kept = instances[:_MAX_INSTANCES_PER_IDENTIFIER]
+            flattened.extend(kept)
+            suppressed = len(instances) - len(kept)
+            if suppressed > 0:
+                flattened.append(
+                    {
+                        "identifier": identifier,
+                        "offset": None,
+                        "matched_data": f"...{suppressed} more instance(s) suppressed",
+                    }
+                )
+
+        if not flattened:
+            continue
+
+        results.append({"rule": match.rule, "tags": list(match.tags), "matches": flattened})
+
+    return results
