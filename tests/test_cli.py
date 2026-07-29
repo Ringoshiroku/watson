@@ -858,14 +858,17 @@ def test_setup_reports_missing_stdlib_modules_with_apt_command_on_linux(tmp_path
     monkeypatch.setattr("watson.cli.DIE_CACHE", tmp_path / "unused-die-cache")
     monkeypatch.setattr("watson.cli.platform.system", lambda: "Linux")
     monkeypatch.setattr("watson.cli.tool_discovery.missing_stdlib_modules", lambda names: ["bz2", "readline"])
+    monkeypatch.setattr("watson.cli._pyenv_version_from_executable", lambda: "3.11.15")
 
     exit_code = main(["setup"])
 
     assert exit_code == 0
     captured = capsys.readouterr()
     assert "python: unavailable (missing stdlib module(s): bz2, readline" in captured.out
-    assert "sudo apt install libbz2-dev libreadline-dev" in captured.out
-    assert "pyenv uninstall <version>" in captured.out
+    assert (
+        "fix: sudo apt install libbz2-dev libreadline-dev && "
+        "pyenv uninstall 3.11.15 && pyenv install 3.11.15"
+    ) in captured.out
 
 
 def test_setup_omits_apt_command_for_missing_stdlib_modules_off_linux(tmp_path, capsys, monkeypatch):
@@ -875,6 +878,7 @@ def test_setup_omits_apt_command_for_missing_stdlib_modules_off_linux(tmp_path, 
     monkeypatch.setattr("watson.cli.DIE_CACHE", tmp_path / "unused-die-cache")
     monkeypatch.setattr("watson.cli.platform.system", lambda: "Darwin")
     monkeypatch.setattr("watson.cli.tool_discovery.missing_stdlib_modules", lambda names: ["bz2"])
+    monkeypatch.setattr("watson.cli._pyenv_version_from_executable", lambda: None)
 
     exit_code = main(["setup"])
 
@@ -882,6 +886,25 @@ def test_setup_omits_apt_command_for_missing_stdlib_modules_off_linux(tmp_path, 
     captured = capsys.readouterr()
     assert "sudo apt install" not in captured.out
     assert "python: unavailable (missing stdlib module(s): bz2" in captured.out
+    assert "rebuild this interpreter after installing the headers above" in captured.out
+
+
+def test_pyenv_version_from_executable_extracts_version_segment(monkeypatch):
+    from watson.cli import _pyenv_version_from_executable
+
+    monkeypatch.setattr(
+        "watson.cli.sys.executable", "/home/kali/.pyenv/versions/3.11.15/bin/python3"
+    )
+
+    assert _pyenv_version_from_executable() == "3.11.15"
+
+
+def test_pyenv_version_from_executable_returns_none_for_non_pyenv_path(monkeypatch):
+    from watson.cli import _pyenv_version_from_executable
+
+    monkeypatch.setattr("watson.cli.sys.executable", "/usr/bin/python3")
+
+    assert _pyenv_version_from_executable() is None
 
 
 def test_setup_prints_interpreter_diagnostic_line(tmp_path, capsys, monkeypatch):

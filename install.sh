@@ -134,7 +134,30 @@ if command -v pyenv >/dev/null 2>&1; then
                 done
                 echo "warning: this pyenv-managed Python ($PYTHON) is missing some stdlib modules: ${missing_modules[*]}." >&2
                 echo "warning: install the matching headers with: sudo apt install ${missing_packages[*]}" >&2
-                echo "warning: then rebuild it with: pyenv uninstall $pyenv_version && pyenv install $pyenv_version" >&2
+                if [ -t 0 ] && [ -t 1 ]; then
+                    read -r -p "rebuild it now with 'pyenv uninstall $pyenv_version && pyenv install $pyenv_version'? [y/N] " rebuild_answer
+                else
+                    rebuild_answer="n"
+                fi
+                if [ "$(printf '%s' "$rebuild_answer" | tr '[:upper:]' '[:lower:]')" = "y" ]; then
+                    check_pyenv_build_deps
+                    if pyenv uninstall -f "$pyenv_version" && pyenv install "$pyenv_version"; then
+                        rm -rf "$VENV_DIR"
+                        still_missing=()
+                        for module in "${missing_modules[@]}"; do
+                            "$PYTHON" -c "import $module" >/dev/null 2>&1 || still_missing+=("$module")
+                        done
+                        if [ "${#still_missing[@]}" -gt 0 ]; then
+                            echo "warning: rebuild finished but still missing: ${still_missing[*]}; check the build log above for missing headers." >&2
+                        else
+                            echo "Rebuilt Python $pyenv_version with full stdlib support; recreating $VENV_DIR to pick it up."
+                        fi
+                    else
+                        echo "warning: rebuild failed; continuing with the existing (incomplete) interpreter." >&2
+                    fi
+                else
+                    echo "warning: then rebuild it with: pyenv uninstall $pyenv_version && pyenv install $pyenv_version" >&2
+                fi
             fi
             ;;
     esac

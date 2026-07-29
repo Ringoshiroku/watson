@@ -64,8 +64,14 @@ or already installed from an earlier run, is also checked for
 runs, not just right after a build; an already-installed but incomplete
 interpreter (e.g. one built before its `-dev` headers were installed)
 would otherwise go unnoticed on every later rerun that just reuses it.
-This warning also names the exact missing modules and the matching
-`sudo apt install` command for them, not just a link to read.
+This warning names the exact missing modules and the matching
+`sudo apt install` command for them, not just a link to read, and
+offers (`[y/N]`, skipped in non-interactive shells) to rebuild that
+interpreter right there with `pyenv uninstall <version> && pyenv
+install <version>`, recreating `.venv` afterward so it picks up the
+rebuilt interpreter. Installing the headers alone doesn't fix an
+already-compiled interpreter, only a rebuild does; declining just
+prints the same commands to run yourself later.
 
 In future shells, activate the virtual environment before running
 watson:
@@ -121,9 +127,13 @@ fail later with an unrelated-looking `ModuleNotFoundError`. This line
 surfaces that root cause up front, every time `watson setup` or
 `watson analyze` runs (not just right after `install.sh` builds a new
 interpreter), instead of it being visible only once, at the top of a
-possibly long `install.sh` run, easy to scroll past. On Linux it names
-the exact `sudo apt install` command for whichever modules are
-missing, not just a link to read.
+possibly long `install.sh` run, easy to scroll past. It's a single
+compact line: `missing stdlib module(s): bz2, readline. fix: sudo apt
+install libbz2-dev libreadline-dev && pyenv uninstall <version> &&
+pyenv install <version>` (the real pyenv version substituted in when
+it can be detected from the interpreter's own path), one command you
+can copy and run, rather than several sentences pointing at a doc
+page.
 
 Then, for each file (or a whole directory of files, analyzed recursively
 one by one):
