@@ -111,6 +111,22 @@ def test_offer_pip_install_prints_captured_output_and_returns_true_on_success(mo
     assert "hint:" not in captured.out
 
 
+def test_find_binary_finds_tool_alongside_sys_executable_when_not_on_path(tmp_path, monkeypatch):
+    venv_bin = tmp_path / "venv_bin"
+    venv_bin.mkdir()
+    fake_binary = venv_bin / "definitely-not-a-real-watson-tool-xyz"
+    fake_binary.write_text("#!/bin/sh\necho hi\n")
+    fake_binary.chmod(0o755)
+
+    monkeypatch.setattr("watson.tool_discovery.sys.executable", str(venv_bin / "python"))
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    status = find_binary("definitely-not-a-real-watson-tool-xyz")
+
+    assert status.available is True
+    assert status.path == str(fake_binary)
+
+
 def test_find_binary_uses_override_path_when_given(tmp_path):
     fake_binary = tmp_path / "fake_tool"
     fake_binary.write_text("#!/bin/sh\necho hi\n")

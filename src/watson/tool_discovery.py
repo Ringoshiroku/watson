@@ -90,6 +90,18 @@ def _offer_pip_install(name: str, pip_package: str) -> bool:
     return result.returncode == 0
 
 
+def _venv_scoped_which(name: str) -> Optional[str]:
+    # console scripts pip-installs alongside the running interpreter (e.g. a
+    # venv's bin/) aren't necessarily on PATH unless that venv is activated;
+    # shutil.which alone misses them even though they're clearly "installed".
+    venv_bin = Path(sys.executable).parent
+    for candidate_name in (name, f"{name}.exe"):
+        candidate = venv_bin / candidate_name
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
 def find_binary(
     name: str,
     override_path: Optional[str] = None,
@@ -106,13 +118,13 @@ def find_binary(
             reason=f"configured path for {name} ({override_path}) does not exist",
         )
 
-    found = shutil.which(name)
+    found = shutil.which(name) or _venv_scoped_which(name)
     if found:
         return ToolStatus(name=name, available=True, path=found, reason=None)
 
     if pip_package and not offline and is_interactive():
         if _offer_pip_install(name, pip_package):
-            found = shutil.which(name)
+            found = shutil.which(name) or _venv_scoped_which(name)
             if found:
                 return ToolStatus(name=name, available=True, path=found, reason=None)
 
