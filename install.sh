@@ -43,6 +43,10 @@ if ! "$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info < (3, 12) else 1)'
                     PYTHON="$pyenv_python"
                     installed=true
                     echo "Using pyenv-installed Python $target for the venv."
+                    if ! "$PYTHON" -c 'import bz2, sqlite3, readline' >/dev/null 2>&1; then
+                        echo "warning: this pyenv build is missing some stdlib extensions (bz2/sqlite3/readline), likely missing system dev headers." >&2
+                        echo "warning: see https://www.kali.org/docs/general-use/using-eol-python-versions/ for the build dependencies to install, then 'pyenv uninstall $target && pyenv install $target' to rebuild with full support." >&2
+                    fi
                 else
                     echo "warning: pyenv install succeeded but $pyenv_python not found; falling back to Python $found." >&2
                 fi
@@ -55,6 +59,19 @@ if ! "$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info < (3, 12) else 1)'
         echo "warning: using Python $found ($PYTHON). stringsifter's pinned numpy build has no wheel past 3.11 and may fail to build from source on this version." >&2
         echo "warning: install Python 3.11 (e.g. 'pyenv install 3.11', or your distro's package) and re-run this script; it will be picked automatically and every optional tool will install cleanly." >&2
         echo "warning: on Kali, python3.11 isn't packaged in apt; see https://www.kali.org/docs/general-use/using-eol-python-versions/ for installing pyenv itself and its build dependencies." >&2
+    fi
+fi
+
+selected_version="$("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+
+if [ -d "$VENV_DIR" ]; then
+    existing_version=""
+    if [ -x "$VENV_DIR/bin/python" ]; then
+        existing_version="$("$VENV_DIR/bin/python" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)"
+    fi
+    if [ "$existing_version" != "$selected_version" ]; then
+        echo "Existing $VENV_DIR uses Python ${existing_version:-an unreadable version}, but Python $selected_version was selected for this run; recreating it..."
+        rm -rf "$VENV_DIR"
     fi
 fi
 
