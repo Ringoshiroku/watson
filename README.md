@@ -217,6 +217,10 @@ what you want you never have to go through a prompt again:
   `hide = true` is skipped entirely, and any one string identifier is
   capped at 20 reported instances (with a "+N more instance(s)
   suppressed" note) so one overly broad rule can't blow up the report.
+  The same overly broad rules can also hit libyara's own internal
+  per-string match cap mid-scan; its `RuntimeWarning` for that is
+  suppressed too, since it's noise from a known-bad rule with no
+  actionable count to recover, not a scan failure.
 - `-c DIR`, `--capa-rules-dir DIR`, same, for capa's rule set.
 - `-s DIR`, `--capa-sigs-dir DIR`, same, for capa's FLIRT signatures
   (identifies statically-linked library functions; capa still works
