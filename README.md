@@ -22,11 +22,32 @@ dev dependencies into it, and runs `watson setup` to check/install the
 optional analysis tools (yara-python, capa, FLOSS, DIE, StringSifter).
 Safe to re-run.
 
+`install.sh` prefers `python3.11`, then `python3.10`, then whatever
+`python3` resolves to, in that order, for the venv. This matters
+because StringSifter's pinned `numpy` build has no wheel past Python
+3.11 and fails to build from source on newer versions (a 3.12+ change
+broke the old setuptools/`pkg_resources` shim it relies on). If none of
+those are found and only a newer Python is on `PATH`, and `pyenv` is
+installed, `install.sh` offers to `pyenv install` 3.11 for you
+(`[y/N]` prompt, skipped in non-interactive shells); otherwise it warns
+and points at installing Python 3.11 yourself (e.g. `pyenv install
+3.11`, or your distro's package) and re-running `install.sh`, which
+will pick it up automatically. On Kali, `python3.11` isn't packaged in
+apt (rolling release, current Python only); see
+https://www.kali.org/docs/general-use/using-eol-python-versions/ for
+installing `pyenv` itself and its build dependencies first.
+
 In future shells, activate the virtual environment before running
 watson:
 
 ```
 source .venv/bin/activate
+```
+
+When you're done, leave it with:
+
+```
+deactivate
 ```
 
 Prefer to manage the environment yourself, or on native Windows

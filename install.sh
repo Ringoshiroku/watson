@@ -6,20 +6,61 @@ cd "$SCRIPT_DIR"
 
 VENV_DIR=".venv"
 
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "error: python3 not found on PATH" >&2
+PYTHON=""
+for candidate in python3.11 python3.10 python3; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+        PYTHON="$candidate"
+        break
+    fi
+done
+
+if [ -z "$PYTHON" ]; then
+    echo "error: no python3 found on PATH" >&2
     exit 1
 fi
 
-if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'; then
-    found="$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
-    echo "error: watson requires Python 3.10 or later, found $found" >&2
+if ! "$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'; then
+    found="$("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+    echo "error: watson requires Python 3.10 or later, found $found ($PYTHON)" >&2
     exit 1
+fi
+
+if ! "$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info < (3, 12) else 1)'; then
+    found="$("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+    installed=false
+    if command -v pyenv >/dev/null 2>&1; then
+        # pyenv < 2.3 lacks the `latest` subcommand; 3.11.13 is the newest 3.11.x as of writing.
+        target="$(pyenv latest -k 3.11 2>/dev/null || echo 3.11.13)"
+        if [ -t 0 ] && [ -t 1 ]; then
+            read -r -p "Python $found found ($PYTHON); stringsifter needs 3.11 or earlier. install Python $target now with 'pyenv install $target'? [y/N] " answer
+        else
+            answer="n"
+        fi
+        if [ "$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')" = "y" ]; then
+            if pyenv install -s "$target"; then
+                pyenv_python="$(pyenv root)/versions/$target/bin/python3.11"
+                if [ -x "$pyenv_python" ]; then
+                    PYTHON="$pyenv_python"
+                    installed=true
+                    echo "Using pyenv-installed Python $target for the venv."
+                else
+                    echo "warning: pyenv install succeeded but $pyenv_python not found; falling back to Python $found." >&2
+                fi
+            else
+                echo "warning: 'pyenv install $target' failed; falling back to Python $found." >&2
+            fi
+        fi
+    fi
+    if [ "$installed" = false ]; then
+        echo "warning: using Python $found ($PYTHON). stringsifter's pinned numpy build has no wheel past 3.11 and may fail to build from source on this version." >&2
+        echo "warning: install Python 3.11 (e.g. 'pyenv install 3.11', or your distro's package) and re-run this script; it will be picked automatically and every optional tool will install cleanly." >&2
+        echo "warning: on Kali, python3.11 isn't packaged in apt; see https://www.kali.org/docs/general-use/using-eol-python-versions/ for installing pyenv itself and its build dependencies." >&2
+    fi
 fi
 
 if [ ! -d "$VENV_DIR" ]; then
     echo "Creating virtual environment at $VENV_DIR..."
-    if ! python3 -m venv "$VENV_DIR"; then
+    if ! "$PYTHON" -m venv "$VENV_DIR"; then
         echo "error: failed to create a virtual environment." >&2
         echo "on Debian/Kali/Ubuntu, you may need: sudo apt install python3-venv" >&2
         exit 1
@@ -43,3 +84,4 @@ echo
 echo "Done. In future shells, activate the virtual environment first:"
 echo "  source $VENV_DIR/bin/activate"
 echo "Then run: watson analyze <file>"
+echo "When you're done, leave the virtual environment with: deactivate"
