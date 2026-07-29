@@ -105,3 +105,91 @@ def test_scan_file_finds_rules_with_yara_extension(tmp_path, compiled_pe):
 
     assert len(matches) == 1
     assert matches[0]["rule"] == "watson_test_fixture_string"
+
+
+def test_scan_file_drops_rule_whose_only_match_is_zero_length(tmp_path):
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "empty.yar").write_text(
+        "rule empty_match_test\n"
+        "{\n"
+        "    strings:\n"
+        "        $e = /foo||/\n"
+        "    condition:\n"
+        "        $e\n"
+        "}\n"
+    )
+    target = tmp_path / "target.bin"
+    target.write_text("nothing relevant here")
+
+    matches = scan_file(target, rules_dir)
+
+    assert matches == []
+
+
+def test_scan_file_filters_out_matches_shorter_than_minimum_length(tmp_path):
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "short_and_long.yar").write_text(
+        "rule short_and_long\n"
+        "{\n"
+        "    strings:\n"
+        '        $short = "he"\n'
+        '        $long = "hello"\n'
+        "    condition:\n"
+        "        $short or $long\n"
+        "}\n"
+    )
+    target = tmp_path / "target.bin"
+    target.write_text("hello from watson test fixture")
+
+    matches = scan_file(target, rules_dir)
+
+    assert len(matches) == 1
+    identifiers = {m["identifier"] for m in matches[0]["matches"]}
+    assert identifiers == {"$long"}
+
+
+def test_scan_file_caps_instances_per_identifier(tmp_path):
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "repeated.yar").write_text(
+        "rule repeated\n"
+        "{\n"
+        "    strings:\n"
+        '        $r = "AAAA"\n'
+        "    condition:\n"
+        "        $r\n"
+        "}\n"
+    )
+    target = tmp_path / "target.bin"
+    target.write_text("AAAA" * 30)
+
+    matches = scan_file(target, rules_dir)
+
+    assert len(matches) == 1
+    r_instances = [m for m in matches[0]["matches"] if m["identifier"] == "$r"]
+    assert len(r_instances) == 21
+    assert "more" in r_instances[-1]["matched_data"]
+
+
+def test_scan_file_skips_rule_marked_hide_in_meta(tmp_path):
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "hidden.yar").write_text(
+        "rule hidden_rule\n"
+        "{\n"
+        "    meta:\n"
+        "        hide = true\n"
+        "    strings:\n"
+        '        $a = "hello"\n'
+        "    condition:\n"
+        "        $a\n"
+        "}\n"
+    )
+    target = tmp_path / "target.bin"
+    target.write_text("hello from watson test fixture")
+
+    matches = scan_file(target, rules_dir)
+
+    assert matches == []

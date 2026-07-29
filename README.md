@@ -165,7 +165,15 @@ what you want you never have to go through a prompt again:
   of the cache `watson setup` manages (recurses into subdirectories,
   matches both `.yar` and `.yara`, and skips over any individual rule
   file that fails to compile instead of losing the whole ruleset).
-  Explicit path, no prompt either way.
+  Explicit path, no prompt either way. Some community rules (loose
+  regexes with no length/word-boundary constraints, or authoring bugs
+  like a trailing empty alternative) can otherwise flood a match with
+  useless single-character or zero-length instances, so matches are
+  filtered before they reach the report or case JSON: instances shorter
+  than 4 characters are dropped, a rule whose own metadata sets
+  `hide = true` is skipped entirely, and any one string identifier is
+  capped at 20 reported instances (with a "+N more instance(s)
+  suppressed" note) so one overly broad rule can't blow up the report.
 - `-c DIR`, `--capa-rules-dir DIR`, same, for capa's rule set.
 - `-s DIR`, `--capa-sigs-dir DIR`, same, for capa's FLIRT signatures
   (identifies statically-linked library functions; capa still works
