@@ -246,7 +246,17 @@ def find_module(
 
 
 def missing_stdlib_modules(module_names: list) -> list:
-    return [name for name in module_names if importlib.util.find_spec(name) is None]
+    # find_spec alone isn't enough: bz2/sqlite3 are pure-Python wrappers
+    # (bz2.py does `from _bz2 import ...`) whose spec exists even when the
+    # underlying compiled C extension doesn't, so only a real import proves
+    # the module actually works.
+    missing = []
+    for name in module_names:
+        try:
+            importlib.import_module(name)
+        except ImportError:
+            missing.append(name)
+    return missing
 
 
 def check_stdlib_modules(module_names: list) -> ToolStatus:

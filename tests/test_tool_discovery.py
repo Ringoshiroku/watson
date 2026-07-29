@@ -119,6 +119,20 @@ def test_missing_stdlib_modules_returns_only_names_that_do_not_import():
     assert result == ["definitely_not_a_real_stdlib_module_xyz"]
 
 
+def test_missing_stdlib_modules_detects_a_module_whose_spec_exists_but_import_fails(tmp_path, monkeypatch):
+    # mirrors bz2/sqlite3: a pure-Python wrapper file exists (so find_spec
+    # alone would say "available") even though it fails to actually import
+    # because the underlying compiled extension it wraps is missing.
+    monkeypatch.syspath_prepend(str(tmp_path))
+    (tmp_path / "watson_test_broken_stdlib_module.py").write_text(
+        "raise ImportError('missing underlying C extension')\n"
+    )
+
+    result = missing_stdlib_modules(["watson_test_broken_stdlib_module"])
+
+    assert result == ["watson_test_broken_stdlib_module"]
+
+
 def test_check_stdlib_modules_reports_available_when_all_present():
     status = check_stdlib_modules(["os", "sys"])
 
