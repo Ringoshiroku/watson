@@ -294,10 +294,16 @@ def build_text_report(case: Case, verbose: bool = False) -> str:
             lines.append(f"  {match['rule']}{tags}")
             if verbose:
                 for string_match in match.get("matches", []):
-                    lines.append(
-                        f"    {string_match['identifier']} @ {hex(string_match['offset'])}: "
-                        f"{string_match['matched_data']!r}"
-                    )
+                    offset = string_match["offset"]
+                    if offset is None:
+                        # the "+N more instance(s) suppressed" marker yara_scan.py
+                        # appends when a rule's matches are capped, not a real match
+                        lines.append(f"    {string_match['identifier']}: {string_match['matched_data']}")
+                    else:
+                        lines.append(
+                            f"    {string_match['identifier']} @ {hex(offset)}: "
+                            f"{string_match['matched_data']!r}"
+                        )
     else:
         lines.append("  none")
 
