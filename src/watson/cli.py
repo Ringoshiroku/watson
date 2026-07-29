@@ -211,21 +211,35 @@ def _resolve_stringsifter(offline: bool) -> dict:
     return {"available": stringsifter_status.available, "reason": stringsifter_status.reason}
 
 
+def _pyenv_version_from_executable() -> str | None:
+    parts = Path(sys.executable).resolve().parts
+    try:
+        versions_idx = parts.index("versions")
+    except ValueError:
+        return None
+    if versions_idx + 1 < len(parts):
+        return parts[versions_idx + 1]
+    return None
+
+
 def _resolve_python_stdlib() -> dict:
     missing = tool_discovery.missing_stdlib_modules(STDLIB_MODULES_TO_CHECK)
     if not missing:
         return {"available": True, "reason": None}
 
-    reason = f"missing stdlib module(s): {', '.join(missing)}"
+    fix_steps = []
     if platform.system() == "Linux":
         packages = [STDLIB_MODULE_APT_PACKAGES[name] for name in missing if name in STDLIB_MODULE_APT_PACKAGES]
         if packages:
-            reason += f"; install with: sudo apt install {' '.join(packages)}"
-    reason += (
-        "; then rebuild this interpreter, e.g. 'pyenv uninstall <version> && pyenv install "
-        "<version>' for a pyenv-managed one (see "
-        "https://www.kali.org/docs/general-use/using-eol-python-versions/)"
-    )
+            fix_steps.append(f"sudo apt install {' '.join(packages)}")
+
+    pyenv_version = _pyenv_version_from_executable()
+    if pyenv_version:
+        fix_steps.append(f"pyenv uninstall {pyenv_version} && pyenv install {pyenv_version}")
+    else:
+        fix_steps.append("rebuild this interpreter after installing the headers above")
+
+    reason = f"missing stdlib module(s): {', '.join(missing)}. fix: {' && '.join(fix_steps)}"
     return {"available": False, "reason": reason}
 
 
