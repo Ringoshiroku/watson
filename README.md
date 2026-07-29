@@ -58,6 +58,13 @@ import) and still exits successfully, so the gap otherwise only
 surfaces later as an obscure `ModuleNotFoundError` from an unrelated
 tool.
 
+Whichever pyenv-managed Python ends up selected, freshly built above
+or already installed from an earlier run, is also checked for
+`bz2`/`sqlite3`/`readline` completeness every time `install.sh` runs,
+not just right after a build; an already-installed but incomplete
+interpreter (e.g. one built before its `-dev` headers were installed)
+would otherwise go unnoticed on every later rerun that just reuses it.
+
 In future shells, activate the virtual environment before running
 watson:
 
