@@ -22,20 +22,30 @@ dev dependencies into it, and runs `watson setup` to check/install the
 optional analysis tools (yara-python, capa, FLOSS, DIE, StringSifter).
 Safe to re-run.
 
-`install.sh` prefers `python3.11`, then `python3.10`, then whatever
-`python3` resolves to, in that order, for the venv. This matters
-because StringSifter's pinned `numpy` build has no wheel past Python
-3.11 and fails to build from source on newer versions (a 3.12+ change
-broke the old setuptools/`pkg_resources` shim it relies on). If none of
-those are found and only a newer Python is on `PATH`, and `pyenv` is
-installed, `install.sh` offers to `pyenv install` 3.11 for you
-(`[y/N]` prompt, skipped in non-interactive shells); otherwise it warns
-and points at installing Python 3.11 yourself (e.g. `pyenv install
-3.11`, or your distro's package) and re-running `install.sh`, which
-will pick it up automatically. On Kali, `python3.11` isn't packaged in
-apt (rolling release, current Python only); see
+`install.sh` prefers an already pyenv-installed 3.11, then 3.10,
+looked up directly by path (not the `python3.11`/`python3.10` shims,
+which only dispatch correctly when that version is pyenv's active
+one), then `python3.11`/`python3.10`/`python3` on `PATH`, in that
+order, for the venv. This matters because StringSifter's pinned
+`numpy` build has no wheel past Python 3.11 and fails to build from
+source on newer versions (a 3.12+ change broke the old
+setuptools/`pkg_resources` shim it relies on). If none of those are
+found and only a newer Python is on `PATH`, and `pyenv` is installed,
+`install.sh` offers to `pyenv install` 3.11 for you (`[y/N]` prompt,
+skipped in non-interactive shells); otherwise it warns and points at
+installing Python 3.11 yourself, giving the exact `pyenv install 3.11`
+command if `pyenv` is already there, or the official `curl -fsSL
+https://pyenv.run | bash` installer command first if it isn't, then
+re-running `install.sh`, which will pick it up automatically. On Kali,
+`python3.11` isn't packaged in apt (rolling release, current Python
+only); see
 https://www.kali.org/docs/general-use/using-eol-python-versions/ for
 installing `pyenv` itself and its build dependencies first.
+
+`install.sh` also recreates `.venv` whenever the selected Python
+version doesn't match the one `.venv` was already built with (e.g.
+after installing 3.11 via pyenv on a rerun), rather than silently
+reusing a stale venv built under the wrong interpreter.
 
 In future shells, activate the virtual environment before running
 watson:

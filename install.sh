@@ -6,13 +6,36 @@ cd "$SCRIPT_DIR"
 
 VENV_DIR=".venv"
 
+pyenv_installed_python() {
+    # look up an already pyenv-installed interpreter directly by path, since
+    # pyenv's python3.11/python3.10 shims only work when that version is the
+    # active one (global/local/shell); an installed-but-inactive version's
+    # shim exists on PATH but fails to dispatch.
+    command -v pyenv >/dev/null 2>&1 || return 1
+    local prefix="${1//./\\.}" match
+    match="$(pyenv versions --bare 2>/dev/null | grep -E "^${prefix}(\\.[0-9]+)?\$" | sort -V | tail -1)"
+    [ -n "$match" ] || return 1
+    local candidate="$(pyenv root)/versions/$match/bin/python3"
+    [ -x "$candidate" ] || return 1
+    printf '%s' "$candidate"
+}
+
 PYTHON=""
-for candidate in python3.11 python3.10 python3; do
-    if command -v "$candidate" >/dev/null 2>&1; then
+for prefix in 3.11 3.10; do
+    if candidate="$(pyenv_installed_python "$prefix")"; then
         PYTHON="$candidate"
         break
     fi
 done
+
+if [ -z "$PYTHON" ]; then
+    for candidate in python3.11 python3.10 python3; do
+        if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c '' >/dev/null 2>&1; then
+            PYTHON="$candidate"
+            break
+        fi
+    done
+fi
 
 if [ -z "$PYTHON" ]; then
     echo "error: no python3 found on PATH" >&2
@@ -57,7 +80,11 @@ if ! "$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info < (3, 12) else 1)'
     fi
     if [ "$installed" = false ]; then
         echo "warning: using Python $found ($PYTHON). stringsifter's pinned numpy build has no wheel past 3.11 and may fail to build from source on this version." >&2
-        echo "warning: install Python 3.11 (e.g. 'pyenv install 3.11', or your distro's package) and re-run this script; it will be picked automatically and every optional tool will install cleanly." >&2
+        if command -v pyenv >/dev/null 2>&1; then
+            echo "warning: install Python 3.11 yourself with 'pyenv install 3.11' and re-run this script; it will be picked automatically and every optional tool will install cleanly." >&2
+        else
+            echo "warning: install pyenv first (e.g. 'curl -fsSL https://pyenv.run | bash'), then 'pyenv install 3.11', then re-run this script; it will be picked automatically." >&2
+        fi
         echo "warning: on Kali, python3.11 isn't packaged in apt; see https://www.kali.org/docs/general-use/using-eol-python-versions/ for installing pyenv itself and its build dependencies." >&2
     fi
 fi
