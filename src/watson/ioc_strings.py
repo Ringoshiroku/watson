@@ -125,6 +125,11 @@ def _find_matches(text: str) -> list:
 
 def find_interesting_strings(strings: list) -> list:
     interesting = []
+    # The same literal string (e.g. a Go import path) commonly occurs at
+    # multiple addresses in one binary, arriving here as separate entries;
+    # without this, each occurrence would repeat the same (string, reason)
+    # finding verbatim.
+    seen_global = set()
     for entry in strings:
         text = entry["string"]
         source = entry["source"]
@@ -135,6 +140,10 @@ def find_interesting_strings(strings: list) -> list:
                 if reason in seen_reasons:
                     continue
                 seen_reasons.add(reason)
+                key = (reason, text)
+                if key in seen_global:
+                    continue
+                seen_global.add(key)
                 interesting.append({"string": text, "source": source, "reason": reason})
         else:
             seen_values = set()
@@ -143,5 +152,8 @@ def find_interesting_strings(strings: list) -> list:
                 if key in seen_values:
                     continue
                 seen_values.add(key)
+                if key in seen_global:
+                    continue
+                seen_global.add(key)
                 interesting.append({"string": value, "source": source, "reason": reason})
     return interesting

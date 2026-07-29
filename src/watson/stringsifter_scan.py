@@ -23,6 +23,7 @@ def _prepare_input(strings: list) -> tuple:
 
 def _parse_ranked_output(stdout: str, source_by_text: dict) -> list:
     ranked = []
+    seen = set()
     for line in stdout.splitlines():
         if not line:
             continue
@@ -34,6 +35,12 @@ def _parse_ranked_output(stdout: str, source_by_text: dict) -> list:
             score = float(score_text)
         except ValueError:
             continue
+        # The same literal string commonly occurs at multiple addresses in
+        # one binary, so rank_strings scores (and prints) it once per
+        # occurrence; without this, identical entries pile up in the output.
+        if text in seen:
+            continue
+        seen.add(text)
         ranked.append({"string": text, "source": source_by_text.get(text, "unknown"), "score": score})
     ranked.sort(key=lambda entry: entry["score"], reverse=True)
     return ranked
