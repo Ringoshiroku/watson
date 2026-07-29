@@ -47,6 +47,17 @@ version doesn't match the one `.venv` was already built with (e.g.
 after installing 3.11 via pyenv on a rerun), rather than silently
 reusing a stale venv built under the wrong interpreter.
 
+Before running `pyenv install`, `install.sh` also checks (on
+Debian/Kali/Ubuntu, via `dpkg`) for the build headers a full Python
+build needs (`libssl-dev`, `zlib1g-dev`, `libbz2-dev`,
+`libreadline-dev`, `libsqlite3-dev`, `libffi-dev`, `liblzma-dev`,
+`tk-dev`, `build-essential`), and warns with the exact `apt install`
+command if any are missing. Without them, `python-build` doesn't fail,
+it silently skips that module (e.g. `bz2`, breaking FLOSS's `networkx`
+import) and still exits successfully, so the gap otherwise only
+surfaces later as an obscure `ModuleNotFoundError` from an unrelated
+tool.
+
 In future shells, activate the virtual environment before running
 watson:
 

@@ -20,6 +20,22 @@ pyenv_installed_python() {
     printf '%s' "$candidate"
 }
 
+check_pyenv_build_deps() {
+    # python-build silently skips optional C extensions (bz2, sqlite3,
+    # readline, tkinter) when their -dev headers are missing, and still
+    # exits 0; catching this before the multi-minute compile is much
+    # cheaper than after.
+    command -v dpkg >/dev/null 2>&1 || return 0
+    local pkg missing=()
+    for pkg in build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev libffi-dev liblzma-dev tk-dev; do
+        dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+        echo "warning: missing build headers for a full Python build (${missing[*]}); the build will still succeed but silently skip modules like bz2/sqlite3/readline/tkinter." >&2
+        echo "warning: install them first with: sudo apt install ${missing[*]}" >&2
+    fi
+}
+
 PYTHON=""
 for prefix in 3.11 3.10; do
     if candidate="$(pyenv_installed_python "$prefix")"; then
@@ -60,6 +76,7 @@ if ! "$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info < (3, 12) else 1)'
             answer="n"
         fi
         if [ "$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')" = "y" ]; then
+            check_pyenv_build_deps
             if pyenv install -s "$target"; then
                 pyenv_python="$(pyenv root)/versions/$target/bin/python3.11"
                 if [ -x "$pyenv_python" ]; then
