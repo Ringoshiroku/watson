@@ -277,6 +277,34 @@ def test_build_text_report_hides_yara_match_detail_by_default():
     assert "evil.example.com" not in report
 
 
+def test_build_text_report_renders_suppressed_match_marker_without_crashing():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        yara_matches=[
+            {
+                "rule": "noisy_rule",
+                "tags": [],
+                "matches": [
+                    {"identifier": "$r", "offset": 4096, "matched_data": "AAAA"},
+                    {"identifier": "$r", "offset": None, "matched_data": "...5 more instance(s) suppressed"},
+                ],
+            }
+        ],
+        tools={"yara": {"available": True, "reason": None}},
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case, verbose=True)
+
+    assert "5 more instance(s) suppressed" in report
+
+
 def test_build_text_report_shows_no_yara_matches_when_empty():
     identity = Identity(
         sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe"
