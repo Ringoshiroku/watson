@@ -7,7 +7,6 @@ import pytest
 
 from watson.cli import build_case, main
 import watson.cli
-import watson.tool_discovery
 
 
 def _isolate_rule_caches(monkeypatch, tmp_path):
@@ -852,23 +851,37 @@ def test_setup_reports_summary_for_all_tools(tmp_path, capsys, monkeypatch):
     assert "watson analyze" in captured.out
 
 
-def test_setup_reports_missing_stdlib_modules_in_summary(tmp_path, capsys, monkeypatch):
+def test_setup_reports_missing_stdlib_modules_with_apt_command_on_linux(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", tmp_path / "unused-yara-cache")
     monkeypatch.setattr("watson.cli.CAPA_RULES_CACHE", tmp_path / "unused-capa-cache")
     monkeypatch.setattr("watson.cli.CAPA_SIGS_REPO_CACHE", tmp_path / "unused-capa-sigs-cache")
     monkeypatch.setattr("watson.cli.DIE_CACHE", tmp_path / "unused-die-cache")
-    monkeypatch.setattr(
-        "watson.cli.check_stdlib_modules",
-        lambda names: watson.tool_discovery.ToolStatus(
-            name="python", available=False, path=None, reason="missing stdlib module(s): bz2; rebuild it"
-        ),
-    )
+    monkeypatch.setattr("watson.cli.platform.system", lambda: "Linux")
+    monkeypatch.setattr("watson.cli.tool_discovery.missing_stdlib_modules", lambda names: ["bz2", "readline"])
 
     exit_code = main(["setup"])
 
     assert exit_code == 0
     captured = capsys.readouterr()
-    assert "python: unavailable (missing stdlib module(s): bz2; rebuild it)" in captured.out
+    assert "python: unavailable (missing stdlib module(s): bz2, readline" in captured.out
+    assert "sudo apt install libbz2-dev libreadline-dev" in captured.out
+    assert "pyenv uninstall <version>" in captured.out
+
+
+def test_setup_omits_apt_command_for_missing_stdlib_modules_off_linux(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", tmp_path / "unused-yara-cache")
+    monkeypatch.setattr("watson.cli.CAPA_RULES_CACHE", tmp_path / "unused-capa-cache")
+    monkeypatch.setattr("watson.cli.CAPA_SIGS_REPO_CACHE", tmp_path / "unused-capa-sigs-cache")
+    monkeypatch.setattr("watson.cli.DIE_CACHE", tmp_path / "unused-die-cache")
+    monkeypatch.setattr("watson.cli.platform.system", lambda: "Darwin")
+    monkeypatch.setattr("watson.cli.tool_discovery.missing_stdlib_modules", lambda names: ["bz2"])
+
+    exit_code = main(["setup"])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "sudo apt install" not in captured.out
+    assert "python: unavailable (missing stdlib module(s): bz2" in captured.out
 
 
 def test_setup_prints_interpreter_diagnostic_line(tmp_path, capsys, monkeypatch):

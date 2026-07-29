@@ -20,6 +20,15 @@ pyenv_installed_python() {
     printf '%s' "$candidate"
 }
 
+stdlib_apt_package() {
+    case "$1" in
+        bz2) echo libbz2-dev ;;
+        sqlite3) echo libsqlite3-dev ;;
+        readline) echo libreadline-dev ;;
+        lzma) echo liblzma-dev ;;
+    esac
+}
+
 check_pyenv_build_deps() {
     # python-build silently skips optional C extensions (bz2, sqlite3,
     # readline, tkinter) when their -dev headers are missing, and still
@@ -112,11 +121,20 @@ if command -v pyenv >/dev/null 2>&1; then
     pyenv_root="$(pyenv root)"
     case "$PYTHON" in
         "$pyenv_root"/*)
-            if ! "$PYTHON" -c 'import bz2, sqlite3, readline' >/dev/null 2>&1; then
+            missing_modules=()
+            for module in bz2 sqlite3 readline lzma; do
+                "$PYTHON" -c "import $module" >/dev/null 2>&1 || missing_modules+=("$module")
+            done
+            if [ "${#missing_modules[@]}" -gt 0 ]; then
                 pyenv_version="${PYTHON#"$pyenv_root"/versions/}"
                 pyenv_version="${pyenv_version%%/*}"
-                echo "warning: this pyenv-managed Python ($PYTHON) is missing some stdlib extensions (bz2/sqlite3/readline), likely missing system dev headers." >&2
-                echo "warning: see https://www.kali.org/docs/general-use/using-eol-python-versions/ for the build dependencies to install, then 'pyenv uninstall $pyenv_version && pyenv install $pyenv_version' to rebuild with full support." >&2
+                missing_packages=()
+                for module in "${missing_modules[@]}"; do
+                    missing_packages+=("$(stdlib_apt_package "$module")")
+                done
+                echo "warning: this pyenv-managed Python ($PYTHON) is missing some stdlib modules: ${missing_modules[*]}." >&2
+                echo "warning: install the matching headers with: sudo apt install ${missing_packages[*]}" >&2
+                echo "warning: then rebuild it with: pyenv uninstall $pyenv_version && pyenv install $pyenv_version" >&2
             fi
             ;;
     esac

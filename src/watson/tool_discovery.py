@@ -245,12 +245,16 @@ def find_module(
     return ToolStatus(name=name, available=False, path=None, reason=reason)
 
 
+def missing_stdlib_modules(module_names: list) -> list:
+    return [name for name in module_names if importlib.util.find_spec(name) is None]
+
+
 def check_stdlib_modules(module_names: list) -> ToolStatus:
     # unlike a missing pip package, a missing stdlib extension (bz2, sqlite3,
     # readline, lzma, ...) means this interpreter itself was built without the
     # matching system -dev header, no pip install can fix that: it needs a
     # rebuild after installing the header, e.g. via pyenv.
-    missing = [name for name in module_names if importlib.util.find_spec(name) is None]
+    missing = missing_stdlib_modules(module_names)
     if not missing:
         return ToolStatus(name="python", available=True, path=sys.executable, reason=None)
 

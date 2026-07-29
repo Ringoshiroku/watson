@@ -60,10 +60,12 @@ tool.
 
 Whichever pyenv-managed Python ends up selected, freshly built above
 or already installed from an earlier run, is also checked for
-`bz2`/`sqlite3`/`readline` completeness every time `install.sh` runs,
-not just right after a build; an already-installed but incomplete
+`bz2`/`sqlite3`/`readline`/`lzma` completeness every time `install.sh`
+runs, not just right after a build; an already-installed but incomplete
 interpreter (e.g. one built before its `-dev` headers were installed)
 would otherwise go unnoticed on every later rerun that just reuses it.
+This warning also names the exact missing modules and the matching
+`sudo apt install` command for them, not just a link to read.
 
 In future shells, activate the virtual environment before running
 watson:
@@ -119,7 +121,9 @@ fail later with an unrelated-looking `ModuleNotFoundError`. This line
 surfaces that root cause up front, every time `watson setup` or
 `watson analyze` runs (not just right after `install.sh` builds a new
 interpreter), instead of it being visible only once, at the top of a
-possibly long `install.sh` run, easy to scroll past.
+possibly long `install.sh` run, easy to scroll past. On Linux it names
+the exact `sudo apt install` command for whichever modules are
+missing, not just a link to read.
 
 Then, for each file (or a whole directory of files, analyzed recursively
 one by one):
