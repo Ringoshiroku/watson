@@ -1,3 +1,4 @@
+import warnings
 from pathlib import Path
 
 import pytest
@@ -171,6 +172,24 @@ def test_scan_file_caps_instances_per_identifier(tmp_path):
     r_instances = [m for m in matches[0]["matches"] if m["identifier"] == "$r"]
     assert len(r_instances) == 21
     assert "more" in r_instances[-1]["matched_data"]
+
+
+def test_scan_file_suppresses_yaras_too_many_matches_runtime_warning(tmp_path, compiled_pe, monkeypatch):
+    class FakeRuleset:
+        def match(self, path):
+            warnings.warn('too many matches for string $a in rule "fake_rule"', RuntimeWarning)
+            return []
+
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "fixture.yar").write_text(_FIXTURE_RULE)
+    monkeypatch.setattr("yara.compile", lambda **kwargs: FakeRuleset())
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        scan_file(compiled_pe, rules_dir)
+
+    assert not any(issubclass(w.category, RuntimeWarning) for w in caught)
 
 
 def test_scan_file_skips_rule_marked_hide_in_meta(tmp_path):

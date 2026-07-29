@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 
@@ -53,7 +54,14 @@ def scan_file(file_path: Path, rules_dir: Path) -> list:
             raise YaraScanError(str(exc)) from exc
 
     try:
-        matches = ruleset.match(str(file_path))
+        # a rule with an unbounded pattern (e.g. the "domain"/"PoetRat_Python"
+        # rules already filtered out below) can hit libyara's own internal
+        # per-string match cap; it raises a RuntimeWarning straight to stderr
+        # over whatever progress output is on screen, we already can't recover
+        # a truncation count from it, so there's nothing actionable to show.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            matches = ruleset.match(str(file_path))
     except yara.Error as exc:
         raise YaraScanError(str(exc)) from exc
 
