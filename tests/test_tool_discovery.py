@@ -4,6 +4,7 @@ import subprocess
 import zipfile
 
 from watson.tool_discovery import (
+    check_stdlib_modules,
     confirm,
     find_binary,
     find_module,
@@ -109,6 +110,21 @@ def test_offer_pip_install_prints_captured_output_and_returns_true_on_success(mo
     captured = capsys.readouterr()
     assert "Successfully installed some-package-1.0" in captured.out
     assert "hint:" not in captured.out
+
+
+def test_check_stdlib_modules_reports_available_when_all_present():
+    status = check_stdlib_modules(["os", "sys"])
+
+    assert status.available is True
+    assert status.reason is None
+
+
+def test_check_stdlib_modules_reports_unavailable_with_missing_names_and_rebuild_hint():
+    status = check_stdlib_modules(["os", "definitely_not_a_real_stdlib_module_xyz"])
+
+    assert status.available is False
+    assert "definitely_not_a_real_stdlib_module_xyz" in status.reason
+    assert "rebuild" in status.reason.lower()
 
 
 def test_find_binary_finds_tool_alongside_sys_executable_when_not_on_path(tmp_path, monkeypatch):

@@ -7,6 +7,7 @@ import pytest
 
 from watson.cli import build_case, main
 import watson.cli
+import watson.tool_discovery
 
 
 def _isolate_rule_caches(monkeypatch, tmp_path):
@@ -831,7 +832,7 @@ def test_analyze_explicit_flags_never_force_verbose(compiled_pe, tmp_path, capsy
     assert "hello from watson test fixture" not in captured.out
 
 
-def test_setup_reports_summary_for_all_five_tools(tmp_path, capsys, monkeypatch):
+def test_setup_reports_summary_for_all_tools(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", tmp_path / "unused-yara-cache")
     monkeypatch.setattr("watson.cli.CAPA_RULES_CACHE", tmp_path / "unused-capa-cache")
     monkeypatch.setattr("watson.cli.CAPA_SIGS_REPO_CACHE", tmp_path / "unused-capa-sigs-cache")
@@ -842,12 +843,32 @@ def test_setup_reports_summary_for_all_five_tools(tmp_path, capsys, monkeypatch)
     assert exit_code == 0
     captured = capsys.readouterr()
     assert "Summary" in captured.out
+    assert "python:" in captured.out
     assert "yara:" in captured.out
     assert "capa:" in captured.out
     assert "floss:" in captured.out
     assert "diec:" in captured.out
     assert "stringsifter:" in captured.out
     assert "watson analyze" in captured.out
+
+
+def test_setup_reports_missing_stdlib_modules_in_summary(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("watson.cli.YARA_RULES_CACHE", tmp_path / "unused-yara-cache")
+    monkeypatch.setattr("watson.cli.CAPA_RULES_CACHE", tmp_path / "unused-capa-cache")
+    monkeypatch.setattr("watson.cli.CAPA_SIGS_REPO_CACHE", tmp_path / "unused-capa-sigs-cache")
+    monkeypatch.setattr("watson.cli.DIE_CACHE", tmp_path / "unused-die-cache")
+    monkeypatch.setattr(
+        "watson.cli.check_stdlib_modules",
+        lambda names: watson.tool_discovery.ToolStatus(
+            name="python", available=False, path=None, reason="missing stdlib module(s): bz2; rebuild it"
+        ),
+    )
+
+    exit_code = main(["setup"])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "python: unavailable (missing stdlib module(s): bz2; rebuild it)" in captured.out
 
 
 def test_setup_prints_interpreter_diagnostic_line(tmp_path, capsys, monkeypatch):
@@ -1016,6 +1037,21 @@ def test_build_case_returns_empty_flags_suffix_when_nothing_selected(compiled_pe
     )
 
     assert flags_suffix == ""
+
+
+def test_build_case_includes_python_stdlib_check_in_tools_regardless_of_flags(compiled_pe):
+    case, _, _, _, _, _ = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=False,
+        run_rank=False,
+        run_unpack=False,
+    )
+
+    assert "python" in case.static.tools
+    assert case.static.tools["python"]["available"] is True
 
 
 def test_build_case_returns_six_element_tuple_including_resolved_capabilities(compiled_pe):
