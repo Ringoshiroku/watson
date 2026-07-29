@@ -192,6 +192,30 @@ def test_scan_file_suppresses_yaras_too_many_matches_runtime_warning(tmp_path, c
     assert not any(issubclass(w.category, RuntimeWarning) for w in caught)
 
 
+def test_scan_file_drops_matches_that_decode_to_unreadable_binary_garbage(tmp_path):
+    # a byte-pattern rule (e.g. a crypto constant) matches raw binary data;
+    # decoding that as UTF-8 produces replacement-character/control-char
+    # soup that tells an analyst nothing, so the match should be dropped
+    # instead of rendered
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "binary_constant.yar").write_text(
+        "rule binary_constant\n"
+        "{\n"
+        "    strings:\n"
+        "        $c = { 01 23 45 67 89 AB CD EF }\n"
+        "    condition:\n"
+        "        $c\n"
+        "}\n"
+    )
+    target = tmp_path / "target.bin"
+    target.write_bytes(b"\x01\x23\x45\x67\x89\xab\xcd\xef")
+
+    matches = scan_file(target, rules_dir)
+
+    assert matches == []
+
+
 def test_scan_file_skips_rule_marked_hide_in_meta(tmp_path):
     rules_dir = tmp_path / "rules"
     rules_dir.mkdir()

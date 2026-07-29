@@ -15,6 +15,17 @@ _MIN_MATCH_LENGTH = 4
 _MAX_INSTANCES_PER_IDENTIFIER = 20
 
 
+def _is_unreadable(text: str) -> bool:
+    # Byte-pattern rules (crypto constants, magic numbers, GUIDs) match raw
+    # binary data, not text; decoding it as UTF-8 produces replacement-
+    # character or control-character soup that tells an analyst nothing.
+    # Rather than render that, the match gets dropped, same treatment as a
+    # too-short match below.
+    if "�" in text:
+        return True
+    return any(ord(c) < 32 and c not in "\t\n\r" for c in text)
+
+
 def scan_file(file_path: Path, rules_dir: Path) -> list:
     import yara
 
@@ -75,6 +86,8 @@ def scan_file(file_path: Path, rules_dir: Path) -> list:
             for instance in string_match.instances:
                 matched_data = instance.matched_data.decode("utf-8", errors="replace")
                 if len(matched_data) < _MIN_MATCH_LENGTH:
+                    continue
+                if _is_unreadable(matched_data):
                     continue
                 by_identifier.setdefault(string_match.identifier, []).append(
                     {
