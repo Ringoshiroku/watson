@@ -257,3 +257,25 @@ def test_caps_matches_per_string_at_twenty():
     result = find_interesting_strings(strings)
 
     assert len(result) == 20
+
+
+def test_does_not_flag_go_generic_type_name_as_domain():
+    # real false positive: Go's math/big.Int type name collides with the
+    # "int" gTLD once the candidate is lowercased before comparison
+    strings = [{"string": "*big.Int", "source": "static_strings"}]
+
+    result = find_interesting_strings(strings)
+
+    assert result == []
+
+
+def test_does_not_flag_capitalized_go_type_names_matching_common_word_tlds():
+    strings = [
+        {"string": "*pkix.Name", "source": "static_strings"},
+        {"string": "*wasm.Store", "source": "static_strings"},
+        {"string": "*yamux.Stream", "source": "static_strings"},
+    ]
+
+    result = find_interesting_strings(strings)
+
+    assert result == []

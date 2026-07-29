@@ -106,7 +106,13 @@ def _find_matches(text: str) -> list:
             spans.append((match.start(), match.end(), reason, match.group()))
 
     for match in _DOMAIN_CANDIDATE.finditer(text):
-        tld = match.group().rsplit(".", 1)[-1].lower()
+        # Case-sensitive on purpose: Go/.NET exported type names (*big.Int,
+        # *pkix.Name, *wasm.Store) are capitalized and would otherwise
+        # collide with common-word gTLDs (int, name, store, stream, info,
+        # download...). Real-world domains are conventionally written
+        # lowercase, so requiring an exact-case match kills this whole
+        # false-positive class without a new exception list.
+        tld = match.group().rsplit(".", 1)[-1]
         if tld not in _KNOWN_TLDS:
             continue
         if _overlaps(match.start(), match.end()):
