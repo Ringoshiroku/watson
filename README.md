@@ -110,6 +110,17 @@ anything you don't want; `watson analyze` still works, it just reports
 that capability as unavailable. Non-interactive runs (scripts, CI, piped
 input) just report what's missing without fetching anything.
 
+The Summary's first line is always `python`: a check that this
+interpreter has the stdlib modules (`bz2`, `sqlite3`, `readline`,
+`lzma`) that capa/FLOSS's own dependencies need. A pyenv-managed
+interpreter built without the matching system `-dev` headers still
+installs and runs fine, it just silently lacks these, so capa/FLOSS
+fail later with an unrelated-looking `ModuleNotFoundError`. This line
+surfaces that root cause up front, every time `watson setup` or
+`watson analyze` runs (not just right after `install.sh` builds a new
+interpreter), instead of it being visible only once, at the top of a
+possibly long `install.sh` run, easy to scroll past.
+
 Then, for each file (or a whole directory of files, analyzed recursively
 one by one):
 

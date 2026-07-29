@@ -243,3 +243,22 @@ def find_module(
     reason = f"{module_name} python module not found"
     reason += f"; install with 'pip install {pip_package}'" if pip_package else "; install it manually"
     return ToolStatus(name=name, available=False, path=None, reason=reason)
+
+
+def check_stdlib_modules(module_names: list) -> ToolStatus:
+    # unlike a missing pip package, a missing stdlib extension (bz2, sqlite3,
+    # readline, lzma, ...) means this interpreter itself was built without the
+    # matching system -dev header, no pip install can fix that: it needs a
+    # rebuild after installing the header, e.g. via pyenv.
+    missing = [name for name in module_names if importlib.util.find_spec(name) is None]
+    if not missing:
+        return ToolStatus(name="python", available=True, path=sys.executable, reason=None)
+
+    reason = (
+        f"missing stdlib module(s): {', '.join(missing)}; this interpreter was likely built "
+        "without their system -dev headers (see "
+        "https://www.kali.org/docs/general-use/using-eol-python-versions/), rebuild it after "
+        "installing them, e.g. 'pyenv uninstall <version> && pyenv install <version>' for a "
+        "pyenv-managed interpreter"
+    )
+    return ToolStatus(name="python", available=False, path=sys.executable, reason=reason)

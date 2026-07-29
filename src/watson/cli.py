@@ -25,6 +25,7 @@ from watson.pe_metadata import InvalidPEError, extract_pe_metadata
 from watson.report import build_json_report, build_text_report
 from watson import progress, tool_discovery
 from watson.tool_discovery import (
+    check_stdlib_modules,
     confirm,
     find_binary,
     find_module,
@@ -52,6 +53,10 @@ UPX_CACHE = WATSON_HOME / "tools" / "upx"
 UPX_RELEASE_BASE = f"https://github.com/upx/upx/releases/download/v{UPX_VERSION}"
 UPX_WIN64_URL = f"{UPX_RELEASE_BASE}/upx-{UPX_VERSION}-win64.zip"
 UPX_WIN32_URL = f"{UPX_RELEASE_BASE}/upx-{UPX_VERSION}-win32.zip"
+# modules whose absence means this interpreter was built without a matching
+# system -dev header (bz2 breaks FLOSS's networkx import; the others are the
+# same class of silent, build-time-only gap)
+STDLIB_MODULES_TO_CHECK = ["bz2", "sqlite3", "readline", "lzma"]
 
 # Same letters as the -y/-c/-f/-d short flags, so what you'd type at the prompt
 # and what you'd pass on the command line to skip it match exactly.
@@ -198,6 +203,11 @@ def _resolve_stringsifter(offline: bool) -> dict:
     return {"available": stringsifter_status.available, "reason": stringsifter_status.reason}
 
 
+def _resolve_python_stdlib() -> dict:
+    status = check_stdlib_modules(STDLIB_MODULES_TO_CHECK)
+    return {"available": status.available, "reason": status.reason}
+
+
 def _resolve_capability_selection(
     rules_dir: Path | None,
     capa_rules_dir: Path | None,
@@ -320,6 +330,7 @@ def build_case(
     )
 
     tools = {}
+    tools["python"] = _resolve_python_stdlib()
     yara_matches = []
 
     if attempt_yara:
@@ -604,6 +615,7 @@ def _run_setup() -> int:
     print()
 
     tools = {}
+    tools["python"] = _resolve_python_stdlib()
     tools["yara"], _ = _resolve_yara(None, offline=False)
     tools["capa"], _, _ = _resolve_capa(None, None, offline=False)
     tools["floss"] = _resolve_floss(offline=False)
