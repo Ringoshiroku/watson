@@ -83,10 +83,6 @@ if ! "$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info < (3, 12) else 1)'
                     PYTHON="$pyenv_python"
                     installed=true
                     echo "Using pyenv-installed Python $target for the venv."
-                    if ! "$PYTHON" -c 'import bz2, sqlite3, readline' >/dev/null 2>&1; then
-                        echo "warning: this pyenv build is missing some stdlib extensions (bz2/sqlite3/readline), likely missing system dev headers." >&2
-                        echo "warning: see https://www.kali.org/docs/general-use/using-eol-python-versions/ for the build dependencies to install, then 'pyenv uninstall $target && pyenv install $target' to rebuild with full support." >&2
-                    fi
                 else
                     echo "warning: pyenv install succeeded but $pyenv_python not found; falling back to Python $found." >&2
                 fi
@@ -107,6 +103,24 @@ if ! "$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info < (3, 12) else 1)'
 fi
 
 selected_version="$("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+
+# Check completeness of whichever pyenv-managed interpreter got selected,
+# whether it was just built above or was already installed from a previous
+# run; a stale broken build (missing bz2/sqlite3/readline) would otherwise
+# go unnoticed on every rerun that finds it already installed.
+if command -v pyenv >/dev/null 2>&1; then
+    pyenv_root="$(pyenv root)"
+    case "$PYTHON" in
+        "$pyenv_root"/*)
+            if ! "$PYTHON" -c 'import bz2, sqlite3, readline' >/dev/null 2>&1; then
+                pyenv_version="${PYTHON#"$pyenv_root"/versions/}"
+                pyenv_version="${pyenv_version%%/*}"
+                echo "warning: this pyenv-managed Python ($PYTHON) is missing some stdlib extensions (bz2/sqlite3/readline), likely missing system dev headers." >&2
+                echo "warning: see https://www.kali.org/docs/general-use/using-eol-python-versions/ for the build dependencies to install, then 'pyenv uninstall $pyenv_version && pyenv install $pyenv_version' to rebuild with full support." >&2
+            fi
+            ;;
+    esac
+fi
 
 if [ -d "$VENV_DIR" ]; then
     existing_version=""
