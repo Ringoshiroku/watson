@@ -10,6 +10,7 @@ from watson.tool_discovery import (
     find_module,
     find_or_fetch_dir,
     find_or_fetch_zip_binary,
+    missing_stdlib_modules,
     select_options,
 )
 
@@ -110,6 +111,12 @@ def test_offer_pip_install_prints_captured_output_and_returns_true_on_success(mo
     captured = capsys.readouterr()
     assert "Successfully installed some-package-1.0" in captured.out
     assert "hint:" not in captured.out
+
+
+def test_missing_stdlib_modules_returns_only_names_that_do_not_import():
+    result = missing_stdlib_modules(["os", "sys", "definitely_not_a_real_stdlib_module_xyz"])
+
+    assert result == ["definitely_not_a_real_stdlib_module_xyz"]
 
 
 def test_check_stdlib_modules_reports_available_when_all_present():

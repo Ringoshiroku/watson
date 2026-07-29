@@ -25,7 +25,6 @@ from watson.pe_metadata import InvalidPEError, extract_pe_metadata
 from watson.report import build_json_report, build_text_report
 from watson import progress, tool_discovery
 from watson.tool_discovery import (
-    check_stdlib_modules,
     confirm,
     find_binary,
     find_module,
@@ -57,6 +56,15 @@ UPX_WIN32_URL = f"{UPX_RELEASE_BASE}/upx-{UPX_VERSION}-win32.zip"
 # system -dev header (bz2 breaks FLOSS's networkx import; the others are the
 # same class of silent, build-time-only gap)
 STDLIB_MODULES_TO_CHECK = ["bz2", "sqlite3", "readline", "lzma"]
+# the -dev header each module's C extension needs to compile, for a concrete
+# apt install hint (Debian/Kali/Ubuntu, where a from-source pyenv build is the
+# realistic way to hit this at all)
+STDLIB_MODULE_APT_PACKAGES = {
+    "bz2": "libbz2-dev",
+    "sqlite3": "libsqlite3-dev",
+    "readline": "libreadline-dev",
+    "lzma": "liblzma-dev",
+}
 
 # Same letters as the -y/-c/-f/-d short flags, so what you'd type at the prompt
 # and what you'd pass on the command line to skip it match exactly.
@@ -204,8 +212,21 @@ def _resolve_stringsifter(offline: bool) -> dict:
 
 
 def _resolve_python_stdlib() -> dict:
-    status = check_stdlib_modules(STDLIB_MODULES_TO_CHECK)
-    return {"available": status.available, "reason": status.reason}
+    missing = tool_discovery.missing_stdlib_modules(STDLIB_MODULES_TO_CHECK)
+    if not missing:
+        return {"available": True, "reason": None}
+
+    reason = f"missing stdlib module(s): {', '.join(missing)}"
+    if platform.system() == "Linux":
+        packages = [STDLIB_MODULE_APT_PACKAGES[name] for name in missing if name in STDLIB_MODULE_APT_PACKAGES]
+        if packages:
+            reason += f"; install with: sudo apt install {' '.join(packages)}"
+    reason += (
+        "; then rebuild this interpreter, e.g. 'pyenv uninstall <version> && pyenv install "
+        "<version>' for a pyenv-managed one (see "
+        "https://www.kali.org/docs/general-use/using-eol-python-versions/)"
+    )
+    return {"available": False, "reason": reason}
 
 
 def _resolve_capability_selection(
