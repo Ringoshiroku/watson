@@ -17,6 +17,8 @@ from watson.upx_unpack import UpxUnpackError
 from watson.elf_metadata import InvalidELFError, extract_elf_metadata
 from watson.file_format import UnsupportedFormatError, detect_format
 from watson.floss_scan import FlossScanError, flatten_strings, save_raw_output, scan_file as floss_scan_file
+from watson import goresym_scan
+from watson.goresym_scan import GoReSymScanError
 from watson.hashing import compute_hashes
 from watson.stringsifter_scan import StringSifterError, rank_strings, save_ranked_strings
 from watson.classification import classify
@@ -349,6 +351,7 @@ def build_case(
     run_capa: bool | None = None,
     run_rank: bool | None = None,
     run_unpack: bool | None = None,
+    run_goresym: bool | None = None,
 ) -> tuple:
     hashes = compute_hashes(file_path)
     file_format = detect_format(file_path)
@@ -400,8 +403,11 @@ def build_case(
         file_name=file_path.name,
     )
 
-    attempt_yara, attempt_capa, run_floss, run_die, run_rank, forced_verbose = _resolve_capability_selection(
-        rules_dir, capa_rules_dir, run_floss, run_die, run_yara, run_capa, run_rank, file_path.name
+    attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym, forced_verbose = (
+        _resolve_capability_selection(
+            rules_dir, capa_rules_dir, run_floss, run_die, run_yara, run_capa,
+            run_rank, run_goresym, file_path.name,
+        )
     )
 
     tools = {}
@@ -524,6 +530,27 @@ def build_case(
             "reason": "unpack not requested (use --unpack)",
         }
 
+    go_build_info: dict = {}
+    goresym_raw = None
+
+    if run_goresym:
+        tools["goresym"], resolved_goresym_path = _resolve_goresym(offline=True)
+        if tools["goresym"]["available"]:
+            try:
+                with progress.stage("GoReSym Go build info recovery"):
+                    goresym_raw = goresym_scan.scan_file(file_path, goresym_binary=resolved_goresym_path)
+                go_build_info = goresym_scan.extract_build_info(goresym_raw) or {}
+                if not go_build_info:
+                    goresym_raw = None
+            except GoReSymScanError as exc:
+                tools["goresym"] = {"available": False, "reason": f"goresym scan failed: {exc}"}
+                goresym_raw = None
+    else:
+        tools["goresym"] = {
+            "available": False,
+            "reason": "goresym not requested (use --goresym)",
+        }
+
     classification = classify(
         yara_matches,
         capabilities,
@@ -546,9 +573,12 @@ def build_case(
         die_detections=die_detections,
         ranked_strings=(ranked_strings_full or [])[:20],
         unpacking=unpacking,
+        go_build_info=go_build_info,
     )
-    resolved_capabilities = (attempt_yara, attempt_capa, run_floss, run_die, run_rank)
-    flags_suffix = _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank, bool(run_unpack))
+    resolved_capabilities = (attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym)
+    flags_suffix = _capability_flags_suffix(
+        attempt_yara, attempt_capa, run_floss, run_die, run_rank, bool(run_unpack), run_goresym
+    )
     return (
         Case(identity=identity, static=static),
         floss_raw,
@@ -556,6 +586,7 @@ def build_case(
         ranked_strings_full,
         flags_suffix,
         resolved_capabilities,
+        goresym_raw,
     )
 
 

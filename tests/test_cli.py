@@ -965,13 +965,14 @@ def test_build_case_respects_explicit_run_yara_and_run_capa_false(compiled_pe, m
 
     monkeypatch.setattr("builtins.input", fail_if_called)
 
-    case, floss_raw, forced_verbose, ranked_strings_full, _, _ = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
         run_floss=False,
         run_die=False,
         run_rank=False,
+        run_goresym=False,
     )
 
     assert case.static.tools["yara"] == {
@@ -1038,10 +1039,10 @@ def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_r
     compiled_pe, monkeypatch
 ):
     monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
-    answers = iter(["n", "n", "n"])
+    answers = iter(["n", "n", "n", "n"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
 
-    case, floss_raw, forced_verbose, ranked_strings_full, _, _ = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, _, _, _ = build_case(
         compiled_pe, run_yara=False, run_capa=False
     )
 
@@ -1051,7 +1052,7 @@ def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_r
 
 
 def test_build_case_returns_flags_suffix_matching_selected_capabilities(compiled_pe):
-    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, _ = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, _, _ = build_case(
         compiled_pe,
         run_yara=True,
         run_capa=False,
@@ -1064,7 +1065,7 @@ def test_build_case_returns_flags_suffix_matching_selected_capabilities(compiled
 
 
 def test_build_case_returns_empty_flags_suffix_when_nothing_selected(compiled_pe):
-    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, _ = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1077,7 +1078,7 @@ def test_build_case_returns_empty_flags_suffix_when_nothing_selected(compiled_pe
 
 
 def test_build_case_includes_python_stdlib_check_in_tools_regardless_of_flags(compiled_pe):
-    case, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1091,7 +1092,7 @@ def test_build_case_includes_python_stdlib_check_in_tools_regardless_of_flags(co
     assert case.static.tools["python"]["available"] is True
 
 
-def test_build_case_returns_six_element_tuple_including_resolved_capabilities(compiled_pe):
+def test_build_case_returns_seven_element_tuple_including_resolved_capabilities(compiled_pe):
     result = build_case(
         compiled_pe,
         run_yara=True,
@@ -1101,13 +1102,13 @@ def test_build_case_returns_six_element_tuple_including_resolved_capabilities(co
         run_rank=False,
     )
 
-    assert len(result) == 6
+    assert len(result) == 7
     resolved_capabilities = result[5]
-    assert resolved_capabilities == (True, False, True, False, False)
+    assert resolved_capabilities == (True, False, True, False, False, False)
 
 
 def test_build_case_does_not_attempt_unpack_when_run_unpack_false(compiled_pe):
-    case, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1123,7 +1124,7 @@ def test_build_case_does_not_attempt_unpack_when_run_unpack_false(compiled_pe):
 def test_build_case_does_not_attempt_unpack_when_die_not_run(compiled_pe, monkeypatch):
     monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
 
-    case, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1141,7 +1142,7 @@ def test_build_case_does_not_attempt_unpack_when_die_finds_no_upx(compiled_pe, m
     monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
     monkeypatch.setattr("watson.cli.die_scan_file", lambda *a, **k: [])
 
-    case, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1163,7 +1164,7 @@ def test_build_case_populates_unpacking_result_when_upx_detected_and_unpack_succ
     )
     monkeypatch.setattr("watson.cli.upx_unpack.unpack_file", lambda file_path, output_path, **k: output_path.write_bytes(b"unpacked"))
 
-    case, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1195,7 +1196,7 @@ def test_build_case_records_failure_reason_when_unpack_fails(compiled_pe, monkey
 
     monkeypatch.setattr("watson.cli.upx_unpack.unpack_file", failing_unpack)
 
-    case, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1707,3 +1708,76 @@ def test_resolve_capability_selection_returns_run_goresym_flag_unchanged_when_ex
 
     *_, run_goresym, forced_verbose = result
     assert run_goresym is True
+
+
+def test_build_case_runs_goresym_and_populates_go_build_info(compiled_pe, monkeypatch, tmp_path):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "watson.cli._resolve_goresym",
+        lambda offline: ({"available": True, "reason": None}, "GoReSym"),
+    )
+    monkeypatch.setattr(
+        "watson.cli.goresym_scan.scan_file",
+        lambda file_path, goresym_binary=None, timeout=60: {
+            "BuildInfo": {
+                "GoVersion": "go1.24.4",
+                "Path": "watsontestbin",
+                "Main": {"Path": "watsontestbin", "Version": "(devel)"},
+                "Deps": [],
+            },
+            "UserFunctions": [{"PackageName": "main", "FullName": "main.main"}],
+        },
+    )
+
+    result = build_case(
+        compiled_pe, run_yara=False, run_capa=False, run_floss=False,
+        run_die=False, run_rank=False, run_goresym=True,
+    )
+    case = result[0]
+    goresym_raw = result[-1]
+
+    assert case.static.tools["goresym"] == {"available": True, "reason": None}
+    assert case.static.go_build_info["go_version"] == "go1.24.4"
+    assert case.static.go_build_info["packages"] == {"main": ["main.main"]}
+    assert goresym_raw is not None
+
+
+def test_build_case_reports_goresym_not_requested_by_default(compiled_pe, monkeypatch, tmp_path):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+
+    result = build_case(
+        compiled_pe, run_yara=False, run_capa=False, run_floss=False,
+        run_die=False, run_rank=False, run_goresym=False,
+    )
+    case = result[0]
+
+    assert case.static.tools["goresym"] == {
+        "available": False,
+        "reason": "goresym not requested (use --goresym)",
+    }
+    assert case.static.go_build_info == {}
+
+
+def test_build_case_marks_goresym_unavailable_on_scan_error(compiled_pe, monkeypatch, tmp_path):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "watson.cli._resolve_goresym",
+        lambda offline: ({"available": True, "reason": None}, "GoReSym"),
+    )
+
+    from watson.goresym_scan import GoReSymScanError
+
+    def fake_scan(file_path, goresym_binary=None, timeout=60):
+        raise GoReSymScanError("boom")
+
+    monkeypatch.setattr("watson.cli.goresym_scan.scan_file", fake_scan)
+
+    result = build_case(
+        compiled_pe, run_yara=False, run_capa=False, run_floss=False,
+        run_die=False, run_rank=False, run_goresym=True,
+    )
+    case = result[0]
+
+    assert case.static.tools["goresym"]["available"] is False
+    assert "goresym scan failed" in case.static.tools["goresym"]["reason"]
+    assert case.static.go_build_info == {}
