@@ -673,6 +673,18 @@ def main(argv: list | None = None) -> int:
         ),
     )
     analyze_parser.add_argument(
+        "-g",
+        "--goresym",
+        action="store_true",
+        default=None,
+        help=(
+            "Run GoReSym to recover Go build info (module path, dependencies with "
+            "versions, own-package function names) from Go binaries; no effect on "
+            "non-Go samples. The complete raw recovery data is written to "
+            "<out>/<basename>_goresym.json. Omit to be asked interactively."
+        ),
+    )
+    analyze_parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -695,6 +707,7 @@ def main(argv: list | None = None) -> int:
             args.diec,
             args.rank_strings,
             args.unpack,
+            args.goresym,
             args.verbose,
         )
 
@@ -726,6 +739,7 @@ def _run_setup() -> int:
     tools["capa"], _, _ = _resolve_capa(None, None, offline=False)
     tools["floss"] = _resolve_floss(offline=False)
     tools["diec"], _ = _resolve_die(offline=False)
+    tools["goresym"], _ = _resolve_goresym(offline=False)
     tools["stringsifter"] = _resolve_stringsifter(offline=False)
 
     print()
@@ -753,6 +767,7 @@ def _run_analyze(
     run_die: bool | None,
     run_rank: bool | None,
     run_unpack: bool | None,
+    run_goresym: bool | None,
     verbose: bool,
 ) -> int:
     if file_path.is_dir():
@@ -766,6 +781,7 @@ def _run_analyze(
             run_die,
             run_rank,
             run_unpack,
+            run_goresym,
             verbose,
         )
 
@@ -776,9 +792,12 @@ def _run_analyze(
     out_dir = _resolve_out_dir(out_dir)
 
     try:
-        case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, resolved_capabilities = build_case(
+        (
+            case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix,
+            resolved_capabilities, goresym_raw,
+        ) = build_case(
             file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die,
-            run_rank=run_rank, run_unpack=run_unpack,
+            run_rank=run_rank, run_unpack=run_unpack, run_goresym=run_goresym,
         )
     except (InvalidPEError, InvalidELFError, UnsupportedFormatError) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -795,18 +814,18 @@ def _run_analyze(
         shutil.move(case.static.unpacking.output_path, unpacked_path)
         case.static.unpacking.output_path = str(unpacked_path)
 
-        attempt_yara, attempt_capa, run_floss_resolved, run_die_resolved, run_rank_resolved = resolved_capabilities
+        (
+            attempt_yara, attempt_capa, run_floss_resolved, run_die_resolved,
+            run_rank_resolved, run_goresym_resolved,
+        ) = resolved_capabilities
         try:
             (
-                unpacked_case,
-                unpacked_floss_raw,
-                _,
-                unpacked_ranked_strings_full,
-                unpacked_flags_suffix,
-                _,
+                unpacked_case, unpacked_floss_raw, _, unpacked_ranked_strings_full,
+                unpacked_flags_suffix, _, unpacked_goresym_raw,
             ) = build_case(
                 unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss_resolved, run_die_resolved,
                 attempt_yara, attempt_capa, run_rank_resolved, run_unpack=False,
+                run_goresym=run_goresym_resolved,
             )
         except (InvalidPEError, InvalidELFError, UnsupportedFormatError) as exc:
             case.static.unpacking.reason = f"unpacked but re-analysis failed: {exc}"
@@ -820,6 +839,10 @@ def _run_analyze(
                 save_ranked_strings(
                     unpacked_ranked_strings_full, out_dir, unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix)
                 )
+            if unpacked_goresym_raw is not None:
+                goresym_scan.save_goresym_raw(
+                    unpacked_goresym_raw, out_dir, unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix)
+                )
             unpacked_text_report = build_text_report(unpacked_case, verbose=effective_verbose)
             unpacked_case.save(
                 out_dir, unpacked_now, data=build_json_report(unpacked_case),
@@ -830,6 +853,8 @@ def _run_analyze(
         save_raw_output(floss_raw, out_dir, case.output_basename(now, flags_suffix))
     if ranked_strings_full is not None:
         save_ranked_strings(ranked_strings_full, out_dir, case.output_basename(now, flags_suffix))
+    if goresym_raw is not None:
+        goresym_scan.save_goresym_raw(goresym_raw, out_dir, case.output_basename(now, flags_suffix))
 
     text_report = build_text_report(case, verbose=effective_verbose)
     case.save(out_dir, now, data=build_json_report(case), text_report=text_report, flags=flags_suffix)
@@ -873,16 +898,22 @@ def _run_batch(
     run_die: bool | None,
     run_rank: bool | None,
     run_unpack: bool | None,
+    run_goresym: bool | None,
     verbose: bool,
 ) -> int:
     out_dir = _resolve_out_dir(out_dir)
     files = sorted(path for path in dir_path.rglob("*") if path.is_file())
 
-    attempt_yara, attempt_capa, run_floss, run_die, run_rank, forced_verbose = _resolve_capability_selection(
-        rules_dir, capa_rules_dir, run_floss, run_die, None, None, run_rank, "this batch"
+    attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym, forced_verbose = (
+        _resolve_capability_selection(
+            rules_dir, capa_rules_dir, run_floss, run_die, None, None, run_rank,
+            run_goresym, "this batch",
+        )
     )
     effective_verbose = verbose or forced_verbose
-    flags_suffix = _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank, bool(run_unpack))
+    flags_suffix = _capability_flags_suffix(
+        attempt_yara, attempt_capa, run_floss, run_die, run_rank, bool(run_unpack), run_goresym
+    )
 
     total = len(files)
     analyzed = 0
@@ -892,7 +923,9 @@ def _run_batch(
 
     for index, file_path in enumerate(files, start=1):
         try:
-            case, floss_raw, _, ranked_strings_full, _, resolved_capabilities = build_case(
+            (
+                case, floss_raw, _, ranked_strings_full, _, resolved_capabilities, goresym_raw,
+            ) = build_case(
                 file_path,
                 rules_dir,
                 capa_rules_dir,
@@ -903,6 +936,7 @@ def _run_batch(
                 attempt_capa,
                 run_rank,
                 run_unpack=run_unpack,
+                run_goresym=run_goresym,
             )
         except (InvalidPEError, InvalidELFError, UnsupportedFormatError):
             skipped += 1
@@ -924,18 +958,17 @@ def _run_batch(
             shutil.move(case.static.unpacking.output_path, unpacked_path)
             case.static.unpacking.output_path = str(unpacked_path)
 
-            r_attempt_yara, r_attempt_capa, r_run_floss, r_run_die, r_run_rank = resolved_capabilities
+            (
+                r_attempt_yara, r_attempt_capa, r_run_floss, r_run_die, r_run_rank, r_run_goresym,
+            ) = resolved_capabilities
             try:
                 (
-                    unpacked_case,
-                    unpacked_floss_raw,
-                    _,
-                    unpacked_ranked_strings_full,
-                    unpacked_flags_suffix,
-                    _,
+                    unpacked_case, unpacked_floss_raw, _, unpacked_ranked_strings_full,
+                    unpacked_flags_suffix, _, unpacked_goresym_raw,
                 ) = build_case(
                     unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, r_run_floss, r_run_die,
                     r_attempt_yara, r_attempt_capa, r_run_rank, run_unpack=False,
+                    run_goresym=r_run_goresym,
                 )
             except (InvalidPEError, InvalidELFError, UnsupportedFormatError) as exc:
                 case.static.unpacking.reason = f"unpacked but re-analysis failed: {exc}"
@@ -952,6 +985,11 @@ def _run_batch(
                         unpacked_ranked_strings_full, out_dir,
                         unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix),
                     )
+                if unpacked_goresym_raw is not None:
+                    goresym_scan.save_goresym_raw(
+                        unpacked_goresym_raw, out_dir,
+                        unpacked_case.output_basename(unpacked_now, unpacked_flags_suffix),
+                    )
                 unpacked_text_report = build_text_report(unpacked_case, verbose=effective_verbose)
                 unpacked_case.save(
                     out_dir, unpacked_now, data=build_json_report(unpacked_case),
@@ -964,6 +1002,8 @@ def _run_batch(
             save_raw_output(floss_raw, out_dir, case.output_basename(now, flags_suffix))
         if ranked_strings_full is not None:
             save_ranked_strings(ranked_strings_full, out_dir, case.output_basename(now, flags_suffix))
+        if goresym_raw is not None:
+            goresym_scan.save_goresym_raw(goresym_raw, out_dir, case.output_basename(now, flags_suffix))
 
         text_report = build_text_report(case, verbose=effective_verbose)
         case.save(out_dir, now, data=build_json_report(case), text_report=text_report, flags=flags_suffix)

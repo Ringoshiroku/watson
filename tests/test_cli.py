@@ -360,7 +360,7 @@ def test_analyze_saves_output_files_with_capability_flags_suffix(compiled_pe, tm
 def test_capability_flags_suffix_includes_u_when_unpack_selected():
     from watson.cli import _capability_flags_suffix
 
-    suffix = _capability_flags_suffix(True, False, False, True, False, True)
+    suffix = _capability_flags_suffix(True, False, False, True, False, True, False)
 
     assert suffix == "ydu"
 
@@ -513,6 +513,7 @@ def test_analyze_with_explicit_floss_flag_never_prompts(compiled_pe, tmp_path, c
             "--floss",
             "--diec",
             "--rank-strings",
+            "--goresym",
         ]
     )
 
@@ -1441,7 +1442,7 @@ def test_analyze_directory_asks_floss_and_die_confirmation_once_each(
     )
 
     assert exit_code == 0
-    assert call_count["n"] == 3
+    assert call_count["n"] == 4
 
 
 def test_analyze_directory_skips_non_pe_files_and_continues(compiled_pe, tmp_path, capsys, monkeypatch):
@@ -1781,3 +1782,68 @@ def test_build_case_marks_goresym_unavailable_on_scan_error(compiled_pe, monkeyp
     assert case.static.tools["goresym"]["available"] is False
     assert "goresym scan failed" in case.static.tools["goresym"]["reason"]
     assert case.static.go_build_info == {}
+
+
+def test_analyze_without_goresym_flag_reports_not_requested(compiled_pe, tmp_path, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir)])
+
+    assert exit_code == 0
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads(case_files[0].read_text())
+    assert case_data["static"]["tools"]["goresym"]["reason"] == "goresym not requested (use --goresym)"
+    assert case_data["static"]["go_build_info"] == {}
+
+
+def test_analyze_goresym_flag_saves_sidecar_when_go_binary_detected(compiled_pe, tmp_path, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "watson.cli._resolve_goresym",
+        lambda offline: ({"available": True, "reason": None}, "GoReSym"),
+    )
+    monkeypatch.setattr(
+        "watson.cli.goresym_scan.scan_file",
+        lambda file_path, goresym_binary=None, timeout=60: {
+            "BuildInfo": {
+                "GoVersion": "go1.24.4",
+                "Path": "watsontestbin",
+                "Main": {"Path": "watsontestbin", "Version": "(devel)"},
+                "Deps": [],
+            },
+            "UserFunctions": [{"PackageName": "main", "FullName": "main.main"}],
+        },
+    )
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir), "-g"])
+
+    assert exit_code == 0
+    sidecar_files = list(out_dir.glob("*_goresym.json"))
+    assert len(sidecar_files) == 1
+    sidecar_data = json.loads(sidecar_files[0].read_text())
+    assert sidecar_data["BuildInfo"]["GoVersion"] == "go1.24.4"
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads([f for f in case_files if not f.name.endswith("_goresym.json")][0].read_text())
+    assert case_data["static"]["go_build_info"]["go_version"] == "go1.24.4"
+
+
+def test_analyze_goresym_does_not_save_sidecar_for_non_go_binary(compiled_pe, tmp_path, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "watson.cli._resolve_goresym",
+        lambda offline: ({"available": True, "reason": None}, "GoReSym"),
+    )
+    monkeypatch.setattr(
+        "watson.cli.goresym_scan.scan_file",
+        lambda file_path, goresym_binary=None, timeout=60: {
+            "error": "Failed to parse file: no valid pclntab found"
+        },
+    )
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir), "-g"])
+
+    assert exit_code == 0
+    assert list(out_dir.glob("*_goresym.json")) == []
