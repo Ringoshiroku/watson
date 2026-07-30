@@ -852,3 +852,46 @@ def test_build_text_report_truncates_long_ranked_strings_for_readability():
     assert ("x" * 300 + "... (+100 more chars)") in report
     # the underlying case data keeps the full, untruncated string
     assert case.static.ranked_strings[0]["string"] == long_string
+
+
+def test_build_text_report_shows_no_go_build_info_when_empty():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(pe_metadata=pe_metadata)
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "Go Build Info" in report
+    assert report.rstrip().endswith("none")
+
+
+def test_build_text_report_shows_go_build_info():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        go_build_info={
+            "go_version": "go1.24.4",
+            "module_path": "watsontestbin",
+            "module_version": "(devel)",
+            "dependencies": [{"path": "github.com/example/examplelib", "version": "v0.0.0"}],
+            "packages": {"main": ["main.main"]},
+        },
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "Go Version: go1.24.4" in report
+    assert "Module: watsontestbin ((devel))" in report
+    assert "github.com/example/examplelib@v0.0.0" in report
+    assert "main.main" in report

@@ -229,6 +229,38 @@ def _render_ranked_strings_lines(ranked_strings: list) -> list:
     return lines
 
 
+def _render_go_build_info_lines(go_build_info: dict) -> list:
+    lines = ["Go Build Info", "-" * 13]
+    if not go_build_info:
+        lines.append("  none")
+        return lines
+
+    lines.append(f"Go Version: {go_build_info.get('go_version') or 'N/A'}")
+    module_path = go_build_info.get("module_path") or "N/A"
+    module_version = go_build_info.get("module_version") or "N/A"
+    lines.append(f"Module: {module_path} ({module_version})")
+
+    lines.append("Dependencies:")
+    dependencies = go_build_info.get("dependencies") or []
+    if dependencies:
+        for dep in dependencies:
+            lines.append(f"  {dep['path']}@{dep['version']}")
+    else:
+        lines.append("  none")
+
+    lines.append("Packages:")
+    packages = go_build_info.get("packages") or {}
+    if packages:
+        for package_name in sorted(packages):
+            lines.append(f"  {package_name}")
+            for func in packages[package_name]:
+                lines.append(f"    {func}")
+    else:
+        lines.append("  none")
+
+    return lines
+
+
 def build_text_report(case: Case, verbose: bool = False) -> str:
     lines = []
     lines.append("=" * 30)
@@ -352,5 +384,8 @@ def build_text_report(case: Case, verbose: bool = False) -> str:
 
     lines.append("")
     lines.extend(_render_ranked_strings_lines(case.static.ranked_strings))
+
+    lines.append("")
+    lines.extend(_render_go_build_info_lines(case.static.go_build_info))
 
     return "\n".join(lines)
