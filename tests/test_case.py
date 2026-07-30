@@ -688,3 +688,34 @@ def test_case_load_tolerates_pe_only_json_missing_elf_metadata(tmp_path):
 
     assert loaded.static.pe_metadata.machine == "0x8664"
     assert loaded.static.elf_metadata is None
+
+
+def test_static_section_go_build_info_defaults_to_empty_dict():
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(pe_metadata=pe_metadata)
+
+    assert static.go_build_info == {}
+
+
+def test_case_round_trips_go_build_info():
+    identity = Identity(sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe")
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        go_build_info={
+            "go_version": "go1.24.4",
+            "module_path": "example",
+            "module_version": "(devel)",
+            "dependencies": [],
+            "packages": {"main": ["main.main"]},
+        },
+    )
+    case = Case(identity=identity, static=static)
+
+    restored = Case.from_dict(case.to_dict())
+
+    assert restored.static.go_build_info == static.go_build_info

@@ -75,6 +75,7 @@ class StaticSection:
     die_detections: list = field(default_factory=list)
     ranked_strings: list = field(default_factory=list)
     unpacking: Optional[UnpackingResult] = None
+    go_build_info: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -106,6 +107,7 @@ class Case:
             die_detections=static_data.get("die_detections", []),
             ranked_strings=static_data.get("ranked_strings", []),
             unpacking=unpacking,
+            go_build_info=static_data.get("go_build_info", {}),
         )
         return cls(identity=identity, static=static)
 
