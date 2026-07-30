@@ -240,6 +240,13 @@ what you want you never have to go through a prompt again:
   https://github.com/horsicq/Detect-It-Easy). `watson analyze -d` itself
   only checks whether `diec` is already available, it never fetches or
   installs. Omit to be asked interactively.
+- `-g`, `--goresym`: run GoReSym to recover Go build info (module path,
+  dependencies with exact versions, and the sample's own function names)
+  from Go binaries. Has no effect on non-Go samples. Needs `GoReSym` on
+  PATH, or auto-fetches a portable build on Linux/Windows if missing. The
+  complete raw recovery data (including Go/runtime-internal symbols this
+  report intentionally leaves out) is written to
+  `<out>/<basename>_goresym.json`.
 - `-r`, `--rank-strings`, rank FLOSS's extracted strings by relevance
   using StringSifter's real ML model (needs `-f`/`--floss` to have also
   run; without it, reported unavailable with a clear reason). The top 20
