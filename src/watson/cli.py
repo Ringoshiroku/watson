@@ -80,13 +80,16 @@ CAPABILITY_OPTIONS = [
     ("d", "Detect It Easy packer/compiler/linker detection"),
     ("r", "StringSifter relevance ranking of extracted strings"),
     ("u", "auto-unpack UPX-packed samples and re-analyze the unpacked binary"),
+    ("g", "GoReSym Go build info / dependency recovery"),
 ]
 
 
-def _capability_flags_suffix(attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_unpack) -> str:
+def _capability_flags_suffix(
+    attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_unpack, run_goresym
+) -> str:
     selected = {
         "y": attempt_yara, "c": attempt_capa, "f": run_floss,
-        "d": run_die, "r": run_rank, "u": run_unpack,
+        "d": run_die, "r": run_rank, "u": run_unpack, "g": run_goresym,
     }
     return "".join(key for key, _ in CAPABILITY_OPTIONS if selected[key])
 
@@ -280,6 +283,7 @@ def _resolve_capability_selection(
     run_yara: bool | None,
     run_capa: bool | None,
     run_rank: bool | None,
+    run_goresym: bool | None,
     subject: str,
 ) -> tuple:
     attempt_yara = True if run_yara is None else run_yara
@@ -298,6 +302,7 @@ def _resolve_capability_selection(
         and run_yara is None
         and run_capa is None
         and run_rank is None
+        and run_goresym is None
         and tool_discovery.is_interactive()
     ):
         print("anything not yet installed will be skipped; run 'watson setup' first to install it")
@@ -307,6 +312,7 @@ def _resolve_capability_selection(
         run_floss = "f" in selection.keys
         run_die = "d" in selection.keys
         run_rank = "r" in selection.keys
+        run_goresym = "g" in selection.keys
         forced_verbose = selection.via_all_shorthand
 
     if run_floss is None:
@@ -324,7 +330,12 @@ def _resolve_capability_selection(
             f"rank extracted strings by relevance on {subject} using StringSifter?"
         )
 
-    return attempt_yara, attempt_capa, run_floss, run_die, run_rank, forced_verbose
+    if run_goresym is None:
+        run_goresym = confirm(
+            f"recover Go build info / dependencies from {subject} using GoReSym (Go binaries only)?"
+        )
+
+    return attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym, forced_verbose
 
 
 def build_case(

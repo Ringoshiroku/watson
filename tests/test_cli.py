@@ -370,7 +370,7 @@ def test_capability_options_includes_unpack_letter():
 
     keys = [key for key, _ in CAPABILITY_OPTIONS]
 
-    assert keys == ["y", "c", "f", "d", "r", "u"]
+    assert keys == ["y", "c", "f", "d", "r", "u", "g"]
 
 
 def test_resolve_upx_reports_unavailable_with_install_hint_when_missing(monkeypatch):
@@ -1685,3 +1685,25 @@ def test_goresym_archive_url_is_none_on_macos(monkeypatch):
     monkeypatch.setattr("watson.cli.platform.system", lambda: "Darwin")
 
     assert watson.cli._goresym_archive_url() is None
+
+
+def test_capability_flags_suffix_includes_g_when_goresym_selected():
+    suffix = watson.cli._capability_flags_suffix(
+        attempt_yara=False, attempt_capa=False, run_floss=False,
+        run_die=False, run_rank=False, run_unpack=False, run_goresym=True,
+    )
+
+    assert "g" in suffix
+
+
+def test_resolve_capability_selection_returns_run_goresym_flag_unchanged_when_explicit(monkeypatch):
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: False)
+
+    result = watson.cli._resolve_capability_selection(
+        rules_dir=None, capa_rules_dir=None, run_floss=False, run_die=False,
+        run_yara=False, run_capa=False, run_rank=False, run_goresym=True,
+        subject="test.exe",
+    )
+
+    *_, run_goresym, forced_verbose = result
+    assert run_goresym is True
