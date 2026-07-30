@@ -257,3 +257,56 @@ def test_caps_matches_per_string_at_twenty():
     result = find_interesting_strings(strings)
 
     assert len(result) == 20
+
+
+def test_does_not_flag_go_generic_type_name_as_domain():
+    # real false positive: Go's math/big.Int type name collides with the
+    # "int" gTLD once the candidate is lowercased before comparison
+    strings = [{"string": "*big.Int", "source": "static_strings"}]
+
+    result = find_interesting_strings(strings)
+
+    assert result == []
+
+
+def test_does_not_flag_capitalized_go_type_names_matching_common_word_tlds():
+    strings = [
+        {"string": "*pkix.Name", "source": "static_strings"},
+        {"string": "*wasm.Store", "source": "static_strings"},
+        {"string": "*yamux.Stream", "source": "static_strings"},
+    ]
+
+    result = find_interesting_strings(strings)
+
+    assert result == []
+
+
+def test_dedupes_identical_string_and_reason_across_multiple_entries():
+    # the same literal string commonly occurs at several addresses in one
+    # binary, arriving here as separate flattened entries
+    strings = [
+        {"string": "cnc.badguy.net", "source": "static_strings"},
+        {"string": "cnc.badguy.net", "source": "static_strings"},
+    ]
+
+    result = find_interesting_strings(strings)
+
+    assert result == [
+        {"string": "cnc.badguy.net", "source": "static_strings", "reason": "domain"}
+    ]
+
+
+def test_dedupes_identical_extracted_match_across_multiple_long_strings():
+    filler = "the quick brown fox jumps over the lazy dog " * 5  # well over 200 chars
+    long_text_one = filler + "beacon reaches out to cnc.badguy.net for updates"
+    long_text_two = filler + "second sample also beacons to cnc.badguy.net directly"
+    strings = [
+        {"string": long_text_one, "source": "static_strings"},
+        {"string": long_text_two, "source": "static_strings"},
+    ]
+
+    result = find_interesting_strings(strings)
+
+    assert result == [
+        {"string": "cnc.badguy.net", "source": "static_strings", "reason": "domain"}
+    ]

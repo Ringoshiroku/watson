@@ -826,3 +826,29 @@ def test_build_text_report_shows_no_ranked_strings_when_empty():
 
     assert "Ranked Strings" in report
     assert report.rstrip().endswith("none")
+
+
+def test_build_text_report_truncates_long_ranked_strings_for_readability():
+    # FLOSS extracts a Go binary's packed string data as one long "string";
+    # the report should stay readable without dropping the entry entirely
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    long_string = "x" * 400
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        ranked_strings=[
+            {"string": long_string, "source": "static_strings", "score": 12.0},
+        ],
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert long_string not in report
+    assert ("x" * 300 + "... (+100 more chars)") in report
+    # the underlying case data keeps the full, untruncated string
+    assert case.static.ranked_strings[0]["string"] == long_string

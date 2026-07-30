@@ -87,6 +87,20 @@ def test_parse_ranked_output_uses_unknown_source_for_unmapped_text():
     assert ranked == [{"string": "mystery", "source": "unknown", "score": 5.00}]
 
 
+def test_parse_ranked_output_dedupes_identical_strings():
+    # the same literal string commonly occurs at multiple addresses in one
+    # binary, so rank_strings scores (and prints) it once per occurrence
+    stdout = "10.00,dup\n10.00,dup\n5.00,unique\n"
+    source_by_text = {"dup": "static_strings", "unique": "static_strings"}
+
+    ranked = _parse_ranked_output(stdout, source_by_text)
+
+    assert ranked == [
+        {"string": "dup", "source": "static_strings", "score": 10.00},
+        {"string": "unique", "source": "static_strings", "score": 5.00},
+    ]
+
+
 def test_rank_strings_returns_empty_list_for_empty_input():
     ranked = rank_strings([], binary="does-not-matter-not-invoked")
 

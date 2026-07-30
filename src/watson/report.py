@@ -207,13 +207,25 @@ def _render_summary_lines(summary: dict) -> list:
     return lines
 
 
+# FLOSS extracts a Go binary's packed string-literal data (no null
+# separators between literals) as one long "string"; the full text is kept
+# in the underlying data (the JSON report and the standalone
+# *_ranked_strings.json file), this only bounds what the plain-text report
+# prints so a single entry can't turn into a multi-KB unreadable line.
+_MAX_RANKED_STRING_DISPLAY_LENGTH = 300
+
+
 def _render_ranked_strings_lines(ranked_strings: list) -> list:
     lines = ["Ranked Strings", "-" * 14]
     if not ranked_strings:
         lines.append("  none")
         return lines
     for entry in ranked_strings:
-        lines.append(f"  {entry['score']:.2f}  {entry['string']} ({entry['source']})")
+        text = entry["string"]
+        if len(text) > _MAX_RANKED_STRING_DISPLAY_LENGTH:
+            omitted = len(text) - _MAX_RANKED_STRING_DISPLAY_LENGTH
+            text = f"{text[:_MAX_RANKED_STRING_DISPLAY_LENGTH]}... (+{omitted} more chars)"
+        lines.append(f"  {entry['score']:.2f}  {text} ({entry['source']})")
     return lines
 
 

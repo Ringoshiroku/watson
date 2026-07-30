@@ -106,7 +106,13 @@ def _find_matches(text: str) -> list:
             spans.append((match.start(), match.end(), reason, match.group()))
 
     for match in _DOMAIN_CANDIDATE.finditer(text):
-        tld = match.group().rsplit(".", 1)[-1].lower()
+        # Case-sensitive on purpose: Go/.NET exported type names (*big.Int,
+        # *pkix.Name, *wasm.Store) are capitalized and would otherwise
+        # collide with common-word gTLDs (int, name, store, stream, info,
+        # download...). Real-world domains are conventionally written
+        # lowercase, so requiring an exact-case match kills this whole
+        # false-positive class without a new exception list.
+        tld = match.group().rsplit(".", 1)[-1]
         if tld not in _KNOWN_TLDS:
             continue
         if _overlaps(match.start(), match.end()):
@@ -119,6 +125,11 @@ def _find_matches(text: str) -> list:
 
 def find_interesting_strings(strings: list) -> list:
     interesting = []
+    # The same literal string (e.g. a Go import path) commonly occurs at
+    # multiple addresses in one binary, arriving here as separate entries;
+    # without this, each occurrence would repeat the same (string, reason)
+    # finding verbatim.
+    seen_global = set()
     for entry in strings:
         text = entry["string"]
         source = entry["source"]
@@ -129,6 +140,10 @@ def find_interesting_strings(strings: list) -> list:
                 if reason in seen_reasons:
                     continue
                 seen_reasons.add(reason)
+                key = (reason, text)
+                if key in seen_global:
+                    continue
+                seen_global.add(key)
                 interesting.append({"string": text, "source": source, "reason": reason})
         else:
             seen_values = set()
@@ -137,5 +152,8 @@ def find_interesting_strings(strings: list) -> list:
                 if key in seen_values:
                     continue
                 seen_values.add(key)
+                if key in seen_global:
+                    continue
+                seen_global.add(key)
                 interesting.append({"string": value, "source": source, "reason": reason})
     return interesting
