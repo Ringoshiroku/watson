@@ -47,6 +47,11 @@ DIE_CACHE = WATSON_HOME / "tools" / "diec"
 DIE_RELEASE_BASE = f"https://github.com/horsicq/DIE-engine/releases/download/{DIE_VERSION}"
 DIE_WIN64_URL = f"{DIE_RELEASE_BASE}/die_win64_portable_{DIE_VERSION}_x64.zip"
 DIE_WIN32_URL = f"{DIE_RELEASE_BASE}/die_win32_portable_{DIE_VERSION}_x86.zip"
+GORESYM_VERSION = "v3.4"
+GORESYM_CACHE = WATSON_HOME / "tools" / "goresym"
+GORESYM_RELEASE_BASE = f"https://github.com/mandiant/GoReSym/releases/download/{GORESYM_VERSION}"
+GORESYM_LINUX_URL = f"{GORESYM_RELEASE_BASE}/GoReSym-linux.zip"
+GORESYM_WINDOWS_URL = f"{GORESYM_RELEASE_BASE}/GoReSym-windows.zip"
 UPX_VERSION = "5.2.0"
 UPX_CACHE = WATSON_HOME / "tools" / "upx"
 UPX_RELEASE_BASE = f"https://github.com/upx/upx/releases/download/v{UPX_VERSION}"
@@ -170,6 +175,30 @@ def _resolve_die(offline: bool) -> tuple[dict, str | None]:
     if die_status.available:
         return {"available": True, "reason": None}, die_status.path
     return {"available": False, "reason": _die_install_hint()}, None
+
+
+def _goresym_archive_url() -> str | None:
+    system = platform.system()
+    if system == "Linux":
+        return GORESYM_LINUX_URL
+    if system == "Windows":
+        return GORESYM_WINDOWS_URL
+    return None
+
+
+def _resolve_goresym(offline: bool) -> tuple[dict, str | None]:
+    goresym_status = find_binary("GoReSym", pip_package=None, offline=offline)
+    if not goresym_status.available:
+        goresym_status = find_or_fetch_zip_binary(
+            "GoReSym",
+            "GoReSym",
+            cache_dir=GORESYM_CACHE,
+            archive_url=_goresym_archive_url(),
+            offline=offline,
+        )
+    if goresym_status.available:
+        return {"available": True, "reason": None}, goresym_status.path
+    return {"available": False, "reason": goresym_status.reason}, None
 
 
 def _upx_install_hint() -> str:
