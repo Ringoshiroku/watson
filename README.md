@@ -197,8 +197,8 @@ what you want you never have to go through a prompt again:
   run finished, `<name>` is the scanned file's own name with dots
   swapped for dashes (so `rb.exe` becomes `rb-exe`, never a
   `rb.exe.json`-style double extension), `<md5>` is the sample's MD5,
-  `<flags>` is which of `y`/`c`/`f`/`d`/`r` were selected for this run
-  (e.g. `yc`, `ycfdr`, omitted entirely along with its leading dash when
+  `<flags>` is which of `y`/`c`/`f`/`d`/`r`/`u`/`g`/`p` were selected for
+  this run (e.g. `yc`, `ycfdr`, omitted entirely along with its leading dash when
   nothing was selected). Named this way instead of by hash alone so the
   filename itself tells you what it is and what was run on it. Also
   always writes `<out>/<timestamp>-<name>-<md5>-<flags>.txt`, the same
@@ -251,6 +251,17 @@ what you want you never have to go through a prompt again:
   fetches or installs. Omit to be asked interactively. The complete raw
   recovery data (including Go/runtime-internal symbols this report
   intentionally leaves out) is written to `<out>/<basename>_goresym.json`.
+- `-p`, `--extract-pyinstaller`, if Detect It Easy identifies PyInstaller
+  framing, extract the sample's bundled contents with `pyinstxtractor-ng`
+  and record a manifest (file list, sizes, and which entries look
+  PyArmor-protected) in the report; needs `-d`/`--diec` to have run and
+  identified PyInstaller. This is a manifest step only, it does not
+  recursively re-analyze extracted files or unpack PyArmor-protected
+  content itself. Unlike YARA/capa/FLOSS, `pyinstxtractor-ng` isn't
+  pip-installable; run `watson setup` first to have it fetched
+  automatically on Linux/Windows (cached under
+  `~/.watson/tools/pyinstxtractor/`); macOS has no auto-fetch and falls
+  through to manual install guidance. Omit to be asked interactively.
 - `-r`, `--rank-strings`, rank FLOSS's extracted strings by relevance
   using StringSifter's real ML model (needs `-f`/`--floss` to have also
   run; without it, reported unavailable with a clear reason). The top 20
@@ -408,8 +419,9 @@ ELF metadata (sections, needed libraries, dynamic symbols, interpreter,
 PIE/stripped flags, packed-likely heuristic), YARA scanning, capa
 capability/ATT&CK/MBC analysis, FLOSS string extraction with IOC-pattern
 flagging, StringSifter relevance ranking of extracted strings, a
-heuristic type/risk classification, and Detect It Easy file
-type/compiler/packer detection, all wired through `watson analyze`
+heuristic type/risk classification, Detect It Easy file
+type/compiler/packer detection, and PyInstaller extraction with
+PyArmor-protection flagging (`-p`), all wired through `watson analyze`
 (including batch/directory mode, which now handles a mix of PE and ELF
 files in the same run), with `watson setup` handling interactive
 fetch/install for every optional rule set or tool.
