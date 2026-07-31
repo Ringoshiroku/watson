@@ -64,6 +64,15 @@ class UnpackingResult:
 
 
 @dataclass
+class PyInstallerExtractionResult:
+    tool: str
+    success: bool
+    reason: Optional[str] = None
+    output_dir: Optional[str] = None
+    entries: list = field(default_factory=list)
+
+
+@dataclass
 class StaticSection:
     pe_metadata: Optional[PEMetadata] = None
     elf_metadata: Optional[ELFMetadata] = None
@@ -75,6 +84,8 @@ class StaticSection:
     die_detections: list = field(default_factory=list)
     ranked_strings: list = field(default_factory=list)
     unpacking: Optional[UnpackingResult] = None
+    go_build_info: dict = field(default_factory=dict)
+    pyinstaller_extraction: Optional[PyInstallerExtractionResult] = None
 
 
 @dataclass
@@ -95,6 +106,10 @@ class Case:
         elf_metadata = ELFMetadata(**elf_metadata_data) if elf_metadata_data else None
         unpacking_data = static_data.get("unpacking")
         unpacking = UnpackingResult(**unpacking_data) if unpacking_data else None
+        pyinstaller_extraction_data = static_data.get("pyinstaller_extraction")
+        pyinstaller_extraction = (
+            PyInstallerExtractionResult(**pyinstaller_extraction_data) if pyinstaller_extraction_data else None
+        )
         static = StaticSection(
             pe_metadata=pe_metadata,
             elf_metadata=elf_metadata,
@@ -106,6 +121,8 @@ class Case:
             die_detections=static_data.get("die_detections", []),
             ranked_strings=static_data.get("ranked_strings", []),
             unpacking=unpacking,
+            go_build_info=static_data.get("go_build_info", {}),
+            pyinstaller_extraction=pyinstaller_extraction,
         )
         return cls(identity=identity, static=static)
 

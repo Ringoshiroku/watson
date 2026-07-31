@@ -18,6 +18,7 @@ def _isolate_rule_caches(monkeypatch, tmp_path):
     monkeypatch.setattr("watson.cli.CAPA_RULES_CACHE", tmp_path / "unused-capa-cache")
     monkeypatch.setattr("watson.cli.CAPA_SIGS_REPO_CACHE", tmp_path / "unused-capa-sigs-cache")
     monkeypatch.setattr("watson.cli.DIE_CACHE", tmp_path / "unused-die-cache")
+    monkeypatch.setattr("watson.cli.GORESYM_CACHE", tmp_path / "unused-goresym-cache")
 
 
 def test_analyze_writes_case_and_prints_report(compiled_pe, tmp_path, capsys, monkeypatch):
@@ -359,7 +360,7 @@ def test_analyze_saves_output_files_with_capability_flags_suffix(compiled_pe, tm
 def test_capability_flags_suffix_includes_u_when_unpack_selected():
     from watson.cli import _capability_flags_suffix
 
-    suffix = _capability_flags_suffix(True, False, False, True, False, True)
+    suffix = _capability_flags_suffix(True, False, False, True, False, True, False, False)
 
     assert suffix == "ydu"
 
@@ -369,7 +370,7 @@ def test_capability_options_includes_unpack_letter():
 
     keys = [key for key, _ in CAPABILITY_OPTIONS]
 
-    assert keys == ["y", "c", "f", "d", "r", "u"]
+    assert keys == ["y", "c", "f", "d", "r", "u", "g", "p"]
 
 
 def test_resolve_upx_reports_unavailable_with_install_hint_when_missing(monkeypatch):
@@ -512,6 +513,8 @@ def test_analyze_with_explicit_floss_flag_never_prompts(compiled_pe, tmp_path, c
             "--floss",
             "--diec",
             "--rank-strings",
+            "--goresym",
+            "--extract-pyinstaller",
         ]
     )
 
@@ -964,13 +967,15 @@ def test_build_case_respects_explicit_run_yara_and_run_capa_false(compiled_pe, m
 
     monkeypatch.setattr("builtins.input", fail_if_called)
 
-    case, floss_raw, forced_verbose, ranked_strings_full, _, _ = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
         run_floss=False,
         run_die=False,
         run_rank=False,
+        run_goresym=False,
+        run_extract_pyinstaller=False,
     )
 
     assert case.static.tools["yara"] == {
@@ -1037,10 +1042,10 @@ def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_r
     compiled_pe, monkeypatch
 ):
     monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
-    answers = iter(["n", "n", "n"])
+    answers = iter(["n", "n", "n", "n", "n"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
 
-    case, floss_raw, forced_verbose, ranked_strings_full, _, _ = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, _, _, _, _ = build_case(
         compiled_pe, run_yara=False, run_capa=False
     )
 
@@ -1050,7 +1055,7 @@ def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_r
 
 
 def test_build_case_returns_flags_suffix_matching_selected_capabilities(compiled_pe):
-    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, _ = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, _, _, _ = build_case(
         compiled_pe,
         run_yara=True,
         run_capa=False,
@@ -1063,7 +1068,7 @@ def test_build_case_returns_flags_suffix_matching_selected_capabilities(compiled
 
 
 def test_build_case_returns_empty_flags_suffix_when_nothing_selected(compiled_pe):
-    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, _ = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1076,7 +1081,7 @@ def test_build_case_returns_empty_flags_suffix_when_nothing_selected(compiled_pe
 
 
 def test_build_case_includes_python_stdlib_check_in_tools_regardless_of_flags(compiled_pe):
-    case, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1090,7 +1095,7 @@ def test_build_case_includes_python_stdlib_check_in_tools_regardless_of_flags(co
     assert case.static.tools["python"]["available"] is True
 
 
-def test_build_case_returns_six_element_tuple_including_resolved_capabilities(compiled_pe):
+def test_build_case_returns_eight_element_tuple_including_resolved_capabilities(compiled_pe):
     result = build_case(
         compiled_pe,
         run_yara=True,
@@ -1100,13 +1105,13 @@ def test_build_case_returns_six_element_tuple_including_resolved_capabilities(co
         run_rank=False,
     )
 
-    assert len(result) == 6
+    assert len(result) == 8
     resolved_capabilities = result[5]
-    assert resolved_capabilities == (True, False, True, False, False)
+    assert resolved_capabilities == (True, False, True, False, False, False)
 
 
 def test_build_case_does_not_attempt_unpack_when_run_unpack_false(compiled_pe):
-    case, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1122,7 +1127,7 @@ def test_build_case_does_not_attempt_unpack_when_run_unpack_false(compiled_pe):
 def test_build_case_does_not_attempt_unpack_when_die_not_run(compiled_pe, monkeypatch):
     monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
 
-    case, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1140,7 +1145,7 @@ def test_build_case_does_not_attempt_unpack_when_die_finds_no_upx(compiled_pe, m
     monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
     monkeypatch.setattr("watson.cli.die_scan_file", lambda *a, **k: [])
 
-    case, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1162,7 +1167,7 @@ def test_build_case_populates_unpacking_result_when_upx_detected_and_unpack_succ
     )
     monkeypatch.setattr("watson.cli.upx_unpack.unpack_file", lambda file_path, output_path, **k: output_path.write_bytes(b"unpacked"))
 
-    case, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1194,7 +1199,7 @@ def test_build_case_records_failure_reason_when_unpack_fails(compiled_pe, monkey
 
     monkeypatch.setattr("watson.cli.upx_unpack.unpack_file", failing_unpack)
 
-    case, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1206,6 +1211,119 @@ def test_build_case_records_failure_reason_when_unpack_fails(compiled_pe, monkey
 
     assert case.static.unpacking.success is False
     assert case.static.unpacking.reason == "upx exited with code 2"
+
+
+def test_build_case_skips_pyinstaller_extraction_when_not_requested(compiled_pe):
+    case, _, _, _, _, _, _, _ = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=False,
+        run_rank=False,
+        run_extract_pyinstaller=False,
+    )
+
+    assert case.static.pyinstaller_extraction is None
+    assert case.static.tools["pyinstxtractor"]["available"] is False
+    assert "not requested" in case.static.tools["pyinstxtractor"]["reason"]
+
+
+def test_build_case_does_not_attempt_extraction_when_die_not_run(compiled_pe):
+    case, _, _, _, _, _, _, _ = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=False,
+        run_rank=False,
+        run_extract_pyinstaller=True,
+    )
+
+    assert case.static.pyinstaller_extraction is None
+    assert case.static.tools["pyinstxtractor"]["available"] is False
+    assert "diec" in case.static.tools["pyinstxtractor"]["reason"]
+
+
+def test_build_case_does_not_attempt_extraction_when_die_finds_no_pyinstaller(compiled_pe, monkeypatch):
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyinstxtractor", lambda offline: ({"available": True, "reason": None}, "pyinstxtractor-ng")
+    )
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr("watson.cli.die_scan_file", lambda *a, **k: [])
+
+    case, _, _, _, _, _, _, _ = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=True,
+        run_rank=False,
+        run_extract_pyinstaller=True,
+    )
+
+    assert case.static.pyinstaller_extraction is None
+
+
+def test_build_case_populates_pyinstaller_extraction_when_detected_and_extraction_succeeds(compiled_pe, monkeypatch):
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyinstxtractor", lambda offline: ({"available": True, "reason": None}, "pyinstxtractor-ng")
+    )
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "PyInstaller", "version": None, "string": None}]}],
+    )
+    fake_entries = [{"path": "main.pyc", "size": 10, "pyarmor_protected": False}]
+    monkeypatch.setattr("watson.cli.pyinstaller_extract.extract_file", lambda *a, **k: fake_entries)
+
+    case, _, _, _, _, _, _, pyinstaller_output_dir = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=True,
+        run_rank=False,
+        run_extract_pyinstaller=True,
+    )
+
+    assert case.static.pyinstaller_extraction is not None
+    assert case.static.pyinstaller_extraction.success is True
+    assert case.static.pyinstaller_extraction.entries == fake_entries
+    assert case.static.tools["pyinstxtractor"]["available"] is True
+    assert pyinstaller_output_dir is not None
+
+
+def test_build_case_records_extraction_failure_reason(compiled_pe, monkeypatch):
+    from watson.pyinstaller_extract import PyInstallerExtractError
+
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyinstxtractor", lambda offline: ({"available": True, "reason": None}, "pyinstxtractor-ng")
+    )
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "PyInstaller", "version": None, "string": None}]}],
+    )
+
+    def failing_extract(*a, **k):
+        raise PyInstallerExtractError("boom")
+
+    monkeypatch.setattr("watson.cli.pyinstaller_extract.extract_file", failing_extract)
+
+    case, _, _, _, _, _, _, pyinstaller_output_dir = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=True,
+        run_rank=False,
+        run_extract_pyinstaller=True,
+    )
+
+    assert case.static.pyinstaller_extraction.success is False
+    assert case.static.pyinstaller_extraction.reason == "boom"
+    assert pyinstaller_output_dir is None
 
 
 def test_analyze_unpacks_and_saves_a_second_case_for_a_upx_packed_sample(compiled_pe, tmp_path, capsys, monkeypatch):
@@ -1233,6 +1351,53 @@ def test_analyze_unpacks_and_saves_a_second_case_for_a_upx_packed_sample(compile
     assert len(unpacked_files) == 1
     captured = capsys.readouterr()
     assert "Unpacked binary analysis" in captured.out
+
+
+def test_analyze_extracts_and_saves_manifest_when_pyinstaller_detected(compiled_pe, tmp_path, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyinstxtractor", lambda offline: ({"available": True, "reason": None}, "pyinstxtractor-ng")
+    )
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "PyInstaller", "version": None, "string": None}]}],
+    )
+    fake_entries = [{"path": "main.pyc", "size": 10, "pyarmor_protected": True}]
+    monkeypatch.setattr("watson.cli.pyinstaller_extract.extract_file", lambda *a, **k: fake_entries)
+
+    exit_code = main(
+        ["analyze", str(compiled_pe), "--out", str(out_dir), "--diec", "--extract-pyinstaller"]
+    )
+
+    assert exit_code == 0
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith(("_floss.json", "_ranked_strings.json"))]
+    assert len(case_files) == 1
+    data = json.loads(case_files[0].read_text())
+    assert data["static"]["pyinstaller_extraction"]["success"] is True
+    assert data["static"]["pyinstaller_extraction"]["entries"] == fake_entries
+    assert data["static"]["pyinstaller_extraction"]["output_dir"].startswith(str(out_dir))
+    assert Path(data["static"]["pyinstaller_extraction"]["output_dir"]).is_dir()
+
+
+def test_analyze_pyinstaller_extraction_absent_when_die_finds_no_pyinstaller(compiled_pe, tmp_path, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyinstxtractor", lambda offline: ({"available": True, "reason": None}, "pyinstxtractor-ng")
+    )
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr("watson.cli.die_scan_file", lambda *a, **k: [])
+
+    exit_code = main(
+        ["analyze", str(compiled_pe), "--out", str(out_dir), "--diec", "--extract-pyinstaller"]
+    )
+
+    assert exit_code == 0
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith(("_floss.json", "_ranked_strings.json"))]
+    data = json.loads(case_files[0].read_text())
+    assert data["static"]["pyinstaller_extraction"] is None
 
 
 def test_analyze_directory_unpacks_and_saves_second_cases_for_upx_packed_samples(
@@ -1439,7 +1604,7 @@ def test_analyze_directory_asks_floss_and_die_confirmation_once_each(
     )
 
     assert exit_code == 0
-    assert call_count["n"] == 3
+    assert call_count["n"] == 5
 
 
 def test_analyze_directory_skips_non_pe_files_and_continues(compiled_pe, tmp_path, capsys, monkeypatch):
@@ -1630,3 +1795,250 @@ def test_analyze_selecting_rank_without_floss_via_mega_prompt_reports_floss_did_
     assert exit_code == 0
     captured = capsys.readouterr()
     assert "stringsifter: unavailable (floss did not run" in captured.out
+
+
+def test_resolve_goresym_returns_available_when_on_path(monkeypatch):
+    from watson.tool_discovery import ToolStatus
+
+    monkeypatch.setattr(
+        "watson.cli.find_binary",
+        lambda name, pip_package=None, offline=False: ToolStatus(
+            name=name, available=True, path="/usr/local/bin/GoReSym", reason=None
+        ),
+    )
+
+    status, path = watson.cli._resolve_goresym(offline=True)
+
+    assert status == {"available": True, "reason": None}
+    assert path == "/usr/local/bin/GoReSym"
+
+
+def test_resolve_goresym_falls_back_to_fetch_when_not_on_path(monkeypatch):
+    from watson.tool_discovery import ToolStatus
+
+    monkeypatch.setattr(
+        "watson.cli.find_binary",
+        lambda name, pip_package=None, offline=False: ToolStatus(
+            name=name, available=False, path=None, reason="GoReSym not found"
+        ),
+    )
+    monkeypatch.setattr("watson.cli.platform.system", lambda: "Linux")
+
+    calls = []
+
+    def fake_fetch(name, binary_relpath, cache_dir, archive_url, offline=False):
+        calls.append((name, binary_relpath, str(cache_dir), archive_url, offline))
+        return ToolStatus(name=name, available=False, path=None, reason="download declined")
+
+    monkeypatch.setattr("watson.cli.find_or_fetch_zip_binary", fake_fetch)
+
+    status, path = watson.cli._resolve_goresym(offline=True)
+
+    assert len(calls) == 1
+    name, binary_relpath, cache_dir, archive_url, offline = calls[0]
+    assert binary_relpath == "GoReSym"
+    assert archive_url == (
+        "https://github.com/mandiant/GoReSym/releases/download/v3.4/GoReSym-linux.zip"
+    )
+    assert offline is True
+    assert status == {"available": False, "reason": "download declined"}
+    assert path is None
+
+
+def test_goresym_archive_url_is_none_on_macos(monkeypatch):
+    monkeypatch.setattr("watson.cli.platform.system", lambda: "Darwin")
+
+    assert watson.cli._goresym_archive_url() is None
+
+
+def test_resolve_goresym_falls_back_to_fetch_with_exe_relpath_on_windows(monkeypatch):
+    from watson.tool_discovery import ToolStatus
+
+    monkeypatch.setattr(
+        "watson.cli.find_binary",
+        lambda name, pip_package=None, offline=False: ToolStatus(
+            name=name, available=False, path=None, reason="GoReSym not found"
+        ),
+    )
+    monkeypatch.setattr("watson.cli.platform.system", lambda: "Windows")
+
+    calls = []
+
+    def fake_fetch(name, binary_relpath, cache_dir, archive_url, offline=False):
+        calls.append((name, binary_relpath, str(cache_dir), archive_url, offline))
+        return ToolStatus(name=name, available=False, path=None, reason="download declined")
+
+    monkeypatch.setattr("watson.cli.find_or_fetch_zip_binary", fake_fetch)
+
+    status, path = watson.cli._resolve_goresym(offline=True)
+
+    assert len(calls) == 1
+    name, binary_relpath, cache_dir, archive_url, offline = calls[0]
+    assert binary_relpath == "GoReSym.exe"
+    assert archive_url == (
+        "https://github.com/mandiant/GoReSym/releases/download/v3.4/GoReSym-windows.zip"
+    )
+    assert offline is True
+    assert status == {"available": False, "reason": "download declined"}
+    assert path is None
+
+
+def test_capability_flags_suffix_includes_g_when_goresym_selected():
+    suffix = watson.cli._capability_flags_suffix(
+        attempt_yara=False, attempt_capa=False, run_floss=False,
+        run_die=False, run_rank=False, run_unpack=False, run_goresym=True,
+        run_extract_pyinstaller=False,
+    )
+
+    assert "g" in suffix
+
+
+def test_resolve_capability_selection_returns_run_goresym_flag_unchanged_when_explicit(monkeypatch):
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: False)
+
+    result = watson.cli._resolve_capability_selection(
+        rules_dir=None, capa_rules_dir=None, run_floss=False, run_die=False,
+        run_yara=False, run_capa=False, run_rank=False, run_goresym=True,
+        run_extract_pyinstaller=False, subject="test.exe",
+    )
+
+    *_, run_goresym, run_extract_pyinstaller, forced_verbose = result
+    assert run_goresym is True
+
+
+def test_build_case_runs_goresym_and_populates_go_build_info(compiled_pe, monkeypatch, tmp_path):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "watson.cli._resolve_goresym",
+        lambda offline: ({"available": True, "reason": None}, "GoReSym"),
+    )
+    monkeypatch.setattr(
+        "watson.cli.goresym_scan.scan_file",
+        lambda file_path, goresym_binary=None, timeout=60: {
+            "BuildInfo": {
+                "GoVersion": "go1.24.4",
+                "Path": "watsontestbin",
+                "Main": {"Path": "watsontestbin", "Version": "(devel)"},
+                "Deps": [],
+            },
+            "UserFunctions": [{"PackageName": "main", "FullName": "main.main"}],
+        },
+    )
+
+    result = build_case(
+        compiled_pe, run_yara=False, run_capa=False, run_floss=False,
+        run_die=False, run_rank=False, run_goresym=True,
+    )
+    case = result[0]
+    goresym_raw = result[6]
+
+    assert case.static.tools["goresym"] == {"available": True, "reason": None}
+    assert case.static.go_build_info["go_version"] == "go1.24.4"
+    assert case.static.go_build_info["packages"] == {"main": ["main.main"]}
+    assert goresym_raw is not None
+
+
+def test_build_case_reports_goresym_not_requested_by_default(compiled_pe, monkeypatch, tmp_path):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+
+    result = build_case(
+        compiled_pe, run_yara=False, run_capa=False, run_floss=False,
+        run_die=False, run_rank=False, run_goresym=False,
+    )
+    case = result[0]
+
+    assert case.static.tools["goresym"] == {
+        "available": False,
+        "reason": "goresym not requested (use --goresym)",
+    }
+    assert case.static.go_build_info == {}
+
+
+def test_build_case_marks_goresym_unavailable_on_scan_error(compiled_pe, monkeypatch, tmp_path):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "watson.cli._resolve_goresym",
+        lambda offline: ({"available": True, "reason": None}, "GoReSym"),
+    )
+
+    from watson.goresym_scan import GoReSymScanError
+
+    def fake_scan(file_path, goresym_binary=None, timeout=60):
+        raise GoReSymScanError("boom")
+
+    monkeypatch.setattr("watson.cli.goresym_scan.scan_file", fake_scan)
+
+    result = build_case(
+        compiled_pe, run_yara=False, run_capa=False, run_floss=False,
+        run_die=False, run_rank=False, run_goresym=True,
+    )
+    case = result[0]
+
+    assert case.static.tools["goresym"]["available"] is False
+    assert "goresym scan failed" in case.static.tools["goresym"]["reason"]
+    assert case.static.go_build_info == {}
+
+
+def test_analyze_without_goresym_flag_reports_not_requested(compiled_pe, tmp_path, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir)])
+
+    assert exit_code == 0
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads(case_files[0].read_text())
+    assert case_data["static"]["tools"]["goresym"]["reason"] == "goresym not requested (use --goresym)"
+    assert case_data["static"]["go_build_info"] == {}
+
+
+def test_analyze_goresym_flag_saves_sidecar_when_go_binary_detected(compiled_pe, tmp_path, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "watson.cli._resolve_goresym",
+        lambda offline: ({"available": True, "reason": None}, "GoReSym"),
+    )
+    monkeypatch.setattr(
+        "watson.cli.goresym_scan.scan_file",
+        lambda file_path, goresym_binary=None, timeout=60: {
+            "BuildInfo": {
+                "GoVersion": "go1.24.4",
+                "Path": "watsontestbin",
+                "Main": {"Path": "watsontestbin", "Version": "(devel)"},
+                "Deps": [],
+            },
+            "UserFunctions": [{"PackageName": "main", "FullName": "main.main"}],
+        },
+    )
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir), "-g"])
+
+    assert exit_code == 0
+    sidecar_files = list(out_dir.glob("*_goresym.json"))
+    assert len(sidecar_files) == 1
+    sidecar_data = json.loads(sidecar_files[0].read_text())
+    assert sidecar_data["BuildInfo"]["GoVersion"] == "go1.24.4"
+    case_files = list(out_dir.glob("*.json"))
+    case_data = json.loads([f for f in case_files if not f.name.endswith("_goresym.json")][0].read_text())
+    assert case_data["static"]["go_build_info"]["go_version"] == "go1.24.4"
+
+
+def test_analyze_goresym_does_not_save_sidecar_for_non_go_binary(compiled_pe, tmp_path, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "watson.cli._resolve_goresym",
+        lambda offline: ({"available": True, "reason": None}, "GoReSym"),
+    )
+    monkeypatch.setattr(
+        "watson.cli.goresym_scan.scan_file",
+        lambda file_path, goresym_binary=None, timeout=60: {
+            "error": "Failed to parse file: no valid pclntab found"
+        },
+    )
+    out_dir = tmp_path / "cases"
+
+    exit_code = main(["analyze", str(compiled_pe), "-o", str(out_dir), "-g"])
+
+    assert exit_code == 0
+    assert list(out_dir.glob("*_goresym.json")) == []

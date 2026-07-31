@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -194,6 +196,9 @@ def _offer_zip_download(name: str, archive_url: str, cache_dir: Path, binary_rel
         cache_dir.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(tmp_path) as archive:
             archive.extractall(cache_dir)
+        target = Path(cache_dir) / binary_relpath
+        if os.name == "posix" and target.is_file():
+            target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     except (OSError, zipfile.BadZipFile, urllib.error.URLError) as exc:
         print(f"download/extract failed: {exc}")
         return False
@@ -222,6 +227,47 @@ def find_or_fetch_zip_binary(
 
     reason = f"{name} not found locally"
     reason += f"; fetch the portable build from {archive_url}" if archive_url else "; install it manually"
+    return ToolStatus(name=name, available=False, path=None, reason=reason)
+
+
+def _offer_binary_download(name: str, download_url: str, dest_path: Path) -> bool:
+    answer = input(f"{name} not found locally. download it now from {download_url}? [y/N] ")
+    if answer.strip().lower() != "y":
+        return False
+
+    dest_path = Path(dest_path)
+    try:
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        with urllib.request.urlopen(download_url, timeout=60) as response:
+            with open(dest_path, "wb") as out_file:
+                shutil.copyfileobj(response, out_file)
+        if os.name == "posix":
+            dest_path.chmod(dest_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    except (OSError, urllib.error.URLError) as exc:
+        print(f"download failed: {exc}")
+        return False
+
+    return dest_path.is_file()
+
+
+def find_or_fetch_binary(
+    name: str,
+    binary_relpath: str,
+    cache_dir: Path,
+    download_url: Optional[str],
+    offline: bool = False,
+) -> ToolStatus:
+    cache_dir = Path(cache_dir)
+    cached_binary = cache_dir / binary_relpath
+    if cached_binary.is_file():
+        return ToolStatus(name=name, available=True, path=str(cached_binary), reason=None)
+
+    if download_url and not offline and is_interactive():
+        if _offer_binary_download(name, download_url, cached_binary):
+            return ToolStatus(name=name, available=True, path=str(cached_binary), reason=None)
+
+    reason = f"{name} not found locally"
+    reason += f"; fetch it from {download_url}" if download_url else "; install it manually"
     return ToolStatus(name=name, available=False, path=None, reason=reason)
 
 

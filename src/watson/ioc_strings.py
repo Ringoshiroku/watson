@@ -74,6 +74,25 @@ _KNOWN_TLDS = frozenset({
     "dz", "tn", "ly", "sc", "mu", "cy", "mt", "al", "mk", "ba",
 })
 
+# Go embeds an import path for every package it links in (including the
+# entire standard library and any vendored dependency), and those paths are
+# structurally indistinguishable from a real domain by TLD alone: the host is
+# a real, lowercase, real-TLD domain, it's just a package host, not
+# infrastructure a sample is beaconing to. Not an exhaustive registry, just
+# the hosts common enough to be worth splitting out of the domain bucket;
+# see the design notes for the deferred, higher-fidelity alternative
+# (parsing the binary's actual buildinfo/pclntab data instead of guessing
+# from string shape).
+_KNOWN_CODE_HOSTS = frozenset({
+    "golang.org", "github.com", "gopkg.in", "google.golang.org", "k8s.io",
+})
+
+
+def _is_known_code_host(domain: str) -> bool:
+    return domain in _KNOWN_CODE_HOSTS or any(
+        domain.endswith("." + host) for host in _KNOWN_CODE_HOSTS
+    )
+
 # Safety valve: a pathological blob (e.g. an embedded resource with many
 # digit-dot runs) shouldn't be able to produce an unbounded number of
 # entries from one source string.
@@ -117,7 +136,8 @@ def _find_matches(text: str) -> list:
             continue
         if _overlaps(match.start(), match.end()):
             continue
-        spans.append((match.start(), match.end(), "domain", match.group()))
+        reason = "go_import_path" if _is_known_code_host(match.group()) else "domain"
+        spans.append((match.start(), match.end(), reason, match.group()))
 
     spans.sort(key=lambda item: item[0])
     return [(reason, value) for _, _, reason, value in spans[:_MAX_MATCHES_PER_STRING]]

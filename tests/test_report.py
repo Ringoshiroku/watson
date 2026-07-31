@@ -234,6 +234,72 @@ def test_build_text_report_omits_unpacking_section_when_absent():
     assert "Unpacking" not in text_report
 
 
+def test_build_text_report_renders_pyinstaller_extraction_section_on_success():
+    from watson.case import PyInstallerExtractionResult
+
+    case = _sample_case()
+    case.static.pyinstaller_extraction = PyInstallerExtractionResult(
+        tool="pyinstxtractor-ng",
+        success=True,
+        output_dir="/out/sample_pyinstaller_extracted",
+        entries=[
+            {"path": "main.pyc", "size": 128, "pyarmor_protected": True},
+            {"path": "python311.dll", "size": 4096, "pyarmor_protected": False},
+        ],
+    )
+
+    report = build_text_report(case)
+
+    assert "PyInstaller Extraction" in report
+    assert "tool: pyinstxtractor-ng" in report
+    assert "result: succeeded" in report
+    assert "output: /out/sample_pyinstaller_extracted" in report
+    assert "entries: 2" in report
+    assert "main.pyc" in report
+    assert "[pyarmor-protected]" in report
+    assert "python311.dll" in report
+
+
+def test_build_text_report_renders_pyinstaller_extraction_section_on_failure():
+    from watson.case import PyInstallerExtractionResult
+
+    case = _sample_case()
+    case.static.pyinstaller_extraction = PyInstallerExtractionResult(
+        tool="pyinstxtractor-ng", success=False, reason="pyinstxtractor-ng not found locally"
+    )
+
+    report = build_text_report(case)
+
+    assert "PyInstaller Extraction" in report
+    assert "result: failed" in report
+    assert "reason: pyinstxtractor-ng not found locally" in report
+
+
+def test_build_text_report_omits_pyinstaller_extraction_section_when_absent():
+    case = _sample_case()
+
+    report = build_text_report(case)
+
+    assert "PyInstaller Extraction" not in report
+
+
+def test_build_text_report_truncates_long_pyinstaller_extraction_manifest():
+    from watson.case import PyInstallerExtractionResult
+
+    case = _sample_case()
+    entries = [{"path": f"file{i}.pyc", "size": 10, "pyarmor_protected": False} for i in range(60)]
+    case.static.pyinstaller_extraction = PyInstallerExtractionResult(
+        tool="pyinstxtractor-ng", success=True, output_dir="/out", entries=entries
+    )
+
+    report = build_text_report(case)
+
+    assert "file0.pyc" in report
+    assert "file49.pyc" in report
+    assert "file50.pyc" not in report
+    assert "+10 more" in report
+
+
 def _sample_case_with_yara_match_detail() -> Case:
     identity = Identity(
         sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
@@ -852,3 +918,79 @@ def test_build_text_report_truncates_long_ranked_strings_for_readability():
     assert ("x" * 300 + "... (+100 more chars)") in report
     # the underlying case data keeps the full, untruncated string
     assert case.static.ranked_strings[0]["string"] == long_string
+
+
+def test_build_text_report_shows_no_go_build_info_when_empty():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(pe_metadata=pe_metadata)
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "Go Build Info" in report
+    assert report.rstrip().endswith("none")
+
+
+def test_build_text_report_shows_go_build_info():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        go_build_info={
+            "go_version": "go1.24.4",
+            "module_path": "watsontestbin",
+            "module_version": "(devel)",
+            "dependencies": [{"path": "github.com/example/examplelib", "version": "v0.0.0"}],
+            "packages": {"main": ["main.main"]},
+        },
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "Go Version: go1.24.4" in report
+    assert "Module: watsontestbin ((devel))" in report
+    assert "github.com/example/examplelib@v0.0.0" in report
+    assert "main.main" in report
+
+
+def test_build_text_report_caps_functions_per_go_package_for_readability():
+    # a large Go binary can recover hundreds of function names per package;
+    # the report should stay skimmable without dropping data from the
+    # underlying case (the full recovery data also lives in the sidecar)
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    functions = [f"main.func{i}" for i in range(25)]
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        go_build_info={
+            "go_version": "go1.24.4",
+            "module_path": "watsontestbin",
+            "module_version": "(devel)",
+            "dependencies": [],
+            "packages": {"main": functions},
+        },
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "main.func0" in report
+    assert "main.func19" in report
+    assert "main.func20" not in report
+    assert "... +5 more" in report
+    # the underlying case data keeps every recovered function name
+    assert len(case.static.go_build_info["packages"]["main"]) == 25

@@ -1,5 +1,6 @@
 import contextlib
 import io
+import os
 import subprocess
 import zipfile
 
@@ -8,6 +9,7 @@ from watson.tool_discovery import (
     confirm,
     find_binary,
     find_module,
+    find_or_fetch_binary,
     find_or_fetch_dir,
     find_or_fetch_zip_binary,
     missing_stdlib_modules,
@@ -473,6 +475,8 @@ def test_find_or_fetch_zip_binary_downloads_and_extracts_when_confirmed(tmp_path
     assert status.available is True
     assert status.path == str(cache_dir / "tool" / "bin.exe")
     assert (cache_dir / "tool" / "bin.exe").read_bytes() == b"fake binary contents"
+    if os.name == "posix":
+        assert os.access(cache_dir / "tool" / "bin.exe", os.X_OK)
 
 
 def test_find_or_fetch_zip_binary_declines_when_user_says_no(tmp_path, monkeypatch):
@@ -508,3 +512,77 @@ def test_find_or_fetch_zip_binary_handles_corrupt_zip_gracefully(tmp_path, monke
 
     assert status.available is False
     assert status.reason is not None
+
+
+def test_find_or_fetch_binary_uses_populated_cache_without_prompting(tmp_path, monkeypatch):
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    (cache_dir / "tool-bin").write_bytes(b"already here")
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("should not fetch when cache already has the binary")
+
+    monkeypatch.setattr("watson.tool_discovery.urllib.request.urlopen", fail_if_called)
+
+    status = find_or_fetch_binary(
+        "tool", "tool-bin", cache_dir=cache_dir, download_url="https://example.invalid/tool-bin"
+    )
+
+    assert status.available is True
+    assert status.path == str(cache_dir / "tool-bin")
+
+
+def test_find_or_fetch_binary_reports_unavailable_when_missing_and_not_interactive(tmp_path):
+    status = find_or_fetch_binary(
+        "tool", "tool-bin", cache_dir=tmp_path / "cache", download_url="https://example.invalid/tool-bin"
+    )
+
+    assert status.available is False
+    assert "not found locally" in status.reason
+
+
+def test_find_or_fetch_binary_reports_manual_hint_when_no_download_url(tmp_path):
+    status = find_or_fetch_binary("tool", "tool-bin", cache_dir=tmp_path / "cache", download_url=None)
+
+    assert status.available is False
+    assert "install it manually" in status.reason
+
+
+def test_find_or_fetch_binary_downloads_when_confirmed(tmp_path, monkeypatch):
+    cache_dir = tmp_path / "cache"
+
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+    monkeypatch.setattr(
+        "watson.tool_discovery.urllib.request.urlopen",
+        lambda url, timeout=60: contextlib.closing(io.BytesIO(b"binary content")),
+    )
+
+    status = find_or_fetch_binary(
+        "tool", "tool-bin", cache_dir=cache_dir, download_url="https://example.invalid/tool-bin"
+    )
+
+    assert status.available is True
+    downloaded = cache_dir / "tool-bin"
+    assert downloaded.is_file()
+    assert downloaded.read_bytes() == b"binary content"
+    if os.name == "posix":
+        assert os.access(downloaded, os.X_OK)
+
+
+def test_find_or_fetch_binary_declines_when_user_says_no(tmp_path, monkeypatch):
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "n")
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("should not download when declined")
+
+    monkeypatch.setattr("watson.tool_discovery.urllib.request.urlopen", fail_if_called)
+
+    status = find_or_fetch_binary(
+        "tool", "tool-bin", cache_dir=cache_dir, download_url="https://example.invalid/tool-bin"
+    )
+
+    assert status.available is False
+    assert not (cache_dir / "tool-bin").exists()

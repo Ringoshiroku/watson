@@ -310,3 +310,58 @@ def test_dedupes_identical_extracted_match_across_multiple_long_strings():
     assert result == [
         {"string": "cnc.badguy.net", "source": "static_strings", "reason": "domain"}
     ]
+
+
+def test_flags_known_go_code_host_import_paths_as_go_import_path_not_domain():
+    # real false positive class: Go embeds import paths for every package it
+    # links in, and they're structurally indistinguishable from a real
+    # domain (lowercase, real TLD) since the host is a real domain, it's just
+    # a package-hosting one, not C2 infrastructure
+    strings = [
+        {
+            "string": "golang.org/x/sys/windows.ERROR_DS_INVALID_SEARCH_FLAG",
+            "source": "static_strings",
+        },
+        {
+            "string": "github.com/tetratelabs/wazero/internal/sysfs.stdioFile.Pwrite",
+            "source": "static_strings",
+        },
+        {"string": "gopkg.in/yaml.v2", "source": "static_strings"},
+        {
+            "string": "google.golang.org/protobuf/internal/impl",
+            "source": "static_strings",
+        },
+        {"string": "k8s.io/apimachinery/pkg/util", "source": "static_strings"},
+    ]
+
+    result = find_interesting_strings(strings)
+
+    assert all(item["reason"] == "go_import_path" for item in result)
+    assert len(result) == 5
+
+
+def test_flags_subdomain_of_known_go_code_host_as_go_import_path():
+    strings = [{"string": "sigs.k8s.io/yaml", "source": "static_strings"}]
+
+    result = find_interesting_strings(strings)
+
+    assert result == [
+        {"string": "sigs.k8s.io/yaml", "source": "static_strings", "reason": "go_import_path"}
+    ]
+
+
+def test_still_flags_real_domain_that_merely_resembles_a_code_host():
+    # a lookalike host (not an exact match or subdomain of a known code
+    # host) must still be flagged as a real domain, not swept into the
+    # go_import_path bucket
+    strings = [{"string": "beacon reaches out to evil-github.com", "source": "static_strings"}]
+
+    result = find_interesting_strings(strings)
+
+    assert result == [
+        {
+            "string": "beacon reaches out to evil-github.com",
+            "source": "static_strings",
+            "reason": "domain",
+        }
+    ]
