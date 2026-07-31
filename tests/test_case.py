@@ -690,6 +690,46 @@ def test_case_load_tolerates_pe_only_json_missing_elf_metadata(tmp_path):
     assert loaded.static.elf_metadata is None
 
 
+def test_case_round_trips_pyinstaller_extraction():
+    from watson.case import PyInstallerExtractionResult
+
+    case = _sample_case()
+    case.static.pyinstaller_extraction = PyInstallerExtractionResult(
+        tool="pyinstxtractor-ng",
+        success=True,
+        output_dir="/tmp/out_extracted",
+        entries=[
+            {"path": "main.pyc", "size": 128, "pyarmor_protected": True},
+            {"path": "python311.dll", "size": 4096, "pyarmor_protected": False},
+        ],
+    )
+
+    restored = Case.from_dict(case.to_dict())
+
+    assert restored.static.pyinstaller_extraction == case.static.pyinstaller_extraction
+
+
+def test_case_round_trips_absent_pyinstaller_extraction():
+    case = _sample_case()
+
+    restored = Case.from_dict(case.to_dict())
+
+    assert restored.static.pyinstaller_extraction is None
+
+
+def test_case_round_trips_failed_pyinstaller_extraction():
+    from watson.case import PyInstallerExtractionResult
+
+    case = _sample_case()
+    case.static.pyinstaller_extraction = PyInstallerExtractionResult(
+        tool="pyinstxtractor-ng", success=False, reason="pyinstxtractor-ng not found locally"
+    )
+
+    restored = Case.from_dict(case.to_dict())
+
+    assert restored.static.pyinstaller_extraction == case.static.pyinstaller_extraction
+
+
 def test_static_section_go_build_info_defaults_to_empty_dict():
     pe_metadata = PEMetadata(
         machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
