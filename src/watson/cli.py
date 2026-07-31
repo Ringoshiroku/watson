@@ -95,15 +95,16 @@ CAPABILITY_OPTIONS = [
     ("r", "StringSifter relevance ranking of extracted strings"),
     ("u", "auto-unpack UPX-packed samples and re-analyze the unpacked binary"),
     ("g", "GoReSym Go build info / dependency recovery"),
+    ("p", "auto-extract PyInstaller-frozen samples and flag PyArmor-protected contents"),
 ]
 
 
 def _capability_flags_suffix(
-    attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_unpack, run_goresym
+    attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_unpack, run_goresym, run_extract_pyinstaller
 ) -> str:
     selected = {
         "y": attempt_yara, "c": attempt_capa, "f": run_floss,
-        "d": run_die, "r": run_rank, "u": run_unpack, "g": run_goresym,
+        "d": run_die, "r": run_rank, "u": run_unpack, "g": run_goresym, "p": run_extract_pyinstaller,
     }
     return "".join(key for key, _ in CAPABILITY_OPTIONS if selected[key])
 
@@ -338,6 +339,7 @@ def _resolve_capability_selection(
     run_capa: bool | None,
     run_rank: bool | None,
     run_goresym: bool | None,
+    run_extract_pyinstaller: bool | None,
     subject: str,
 ) -> tuple:
     attempt_yara = True if run_yara is None else run_yara
@@ -357,6 +359,7 @@ def _resolve_capability_selection(
         and run_capa is None
         and run_rank is None
         and run_goresym is None
+        and run_extract_pyinstaller is None
         and tool_discovery.is_interactive()
     ):
         print("anything not yet installed will be skipped; run 'watson setup' first to install it")
@@ -367,6 +370,7 @@ def _resolve_capability_selection(
         run_die = "d" in selection.keys
         run_rank = "r" in selection.keys
         run_goresym = "g" in selection.keys
+        run_extract_pyinstaller = "p" in selection.keys
         forced_verbose = selection.via_all_shorthand
 
     if run_floss is None:
@@ -389,7 +393,15 @@ def _resolve_capability_selection(
             f"recover Go build info / dependencies from {subject} using GoReSym (Go binaries only)?"
         )
 
-    return attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym, forced_verbose
+    if run_extract_pyinstaller is None:
+        run_extract_pyinstaller = confirm(
+            f"extract PyInstaller-frozen contents from {subject} if detected (needs Detect It Easy to run)?"
+        )
+
+    return (
+        attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym, run_extract_pyinstaller,
+        forced_verbose,
+    )
 
 
 def build_case(
@@ -456,11 +468,12 @@ def build_case(
         file_name=file_path.name,
     )
 
-    attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym, forced_verbose = (
-        _resolve_capability_selection(
-            rules_dir, capa_rules_dir, run_floss, run_die, run_yara, run_capa,
-            run_rank, run_goresym, file_path.name,
-        )
+    (
+        attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym, run_extract_pyinstaller,
+        forced_verbose,
+    ) = _resolve_capability_selection(
+        rules_dir, capa_rules_dir, run_floss, run_die, run_yara, run_capa,
+        run_rank, run_goresym, run_extract_pyinstaller, file_path.name,
     )
 
     tools = {}
@@ -666,7 +679,8 @@ def build_case(
     )
     resolved_capabilities = (attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym)
     flags_suffix = _capability_flags_suffix(
-        attempt_yara, attempt_capa, run_floss, run_die, run_rank, bool(run_unpack), run_goresym
+        attempt_yara, attempt_capa, run_floss, run_die, run_rank, bool(run_unpack), run_goresym,
+        bool(run_extract_pyinstaller),
     )
     return (
         Case(identity=identity, static=static),
@@ -775,6 +789,17 @@ def main(argv: list | None = None) -> int:
         ),
     )
     analyze_parser.add_argument(
+        "-p",
+        "--extract-pyinstaller",
+        action="store_true",
+        default=None,
+        help=(
+            "If Detect It Easy identifies PyInstaller framing, extract the sample's bundled "
+            "contents with pyinstxtractor-ng and record a manifest, flagging any entries that "
+            "look PyArmor-protected (needs --diec to have run). Omit to be asked interactively."
+        ),
+    )
+    analyze_parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -798,6 +823,7 @@ def main(argv: list | None = None) -> int:
             args.rank_strings,
             args.unpack,
             args.goresym,
+            args.extract_pyinstaller,
             args.verbose,
         )
 
@@ -859,6 +885,7 @@ def _run_analyze(
     run_rank: bool | None,
     run_unpack: bool | None,
     run_goresym: bool | None,
+    run_extract_pyinstaller: bool | None,
     verbose: bool,
 ) -> int:
     if file_path.is_dir():
@@ -873,6 +900,7 @@ def _run_analyze(
             run_rank,
             run_unpack,
             run_goresym,
+            run_extract_pyinstaller,
             verbose,
         )
 
@@ -885,10 +913,11 @@ def _run_analyze(
     try:
         (
             case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix,
-            resolved_capabilities, goresym_raw, _,
+            resolved_capabilities, goresym_raw, pyinstaller_output_dir,
         ) = build_case(
             file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die,
             run_rank=run_rank, run_unpack=run_unpack, run_goresym=run_goresym,
+            run_extract_pyinstaller=run_extract_pyinstaller,
         )
     except (InvalidPEError, InvalidELFError, UnsupportedFormatError) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -940,6 +969,12 @@ def _run_analyze(
                 text_report=unpacked_text_report, flags=unpacked_flags_suffix,
             )
 
+    if case.static.pyinstaller_extraction is not None and case.static.pyinstaller_extraction.success:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        extracted_dir = out_dir / f"{case.output_basename(now, flags_suffix)}_pyinstaller_extracted"
+        shutil.move(str(pyinstaller_output_dir), str(extracted_dir))
+        case.static.pyinstaller_extraction.output_dir = str(extracted_dir)
+
     if floss_raw is not None:
         save_raw_output(floss_raw, out_dir, case.output_basename(now, flags_suffix))
     if ranked_strings_full is not None:
@@ -990,20 +1025,23 @@ def _run_batch(
     run_rank: bool | None,
     run_unpack: bool | None,
     run_goresym: bool | None,
+    run_extract_pyinstaller: bool | None,
     verbose: bool,
 ) -> int:
     out_dir = _resolve_out_dir(out_dir)
     files = sorted(path for path in dir_path.rglob("*") if path.is_file())
 
-    attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym, forced_verbose = (
-        _resolve_capability_selection(
-            rules_dir, capa_rules_dir, run_floss, run_die, None, None, run_rank,
-            run_goresym, "this batch",
-        )
+    (
+        attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym, run_extract_pyinstaller,
+        forced_verbose,
+    ) = _resolve_capability_selection(
+        rules_dir, capa_rules_dir, run_floss, run_die, None, None, run_rank,
+        run_goresym, run_extract_pyinstaller, "this batch",
     )
     effective_verbose = verbose or forced_verbose
     flags_suffix = _capability_flags_suffix(
-        attempt_yara, attempt_capa, run_floss, run_die, run_rank, bool(run_unpack), run_goresym
+        attempt_yara, attempt_capa, run_floss, run_die, run_rank, bool(run_unpack), run_goresym,
+        bool(run_extract_pyinstaller),
     )
 
     total = len(files)
@@ -1015,7 +1053,8 @@ def _run_batch(
     for index, file_path in enumerate(files, start=1):
         try:
             (
-                case, floss_raw, _, ranked_strings_full, _, resolved_capabilities, goresym_raw, _,
+                case, floss_raw, _, ranked_strings_full, _, resolved_capabilities, goresym_raw,
+                pyinstaller_output_dir,
             ) = build_case(
                 file_path,
                 rules_dir,
@@ -1028,6 +1067,7 @@ def _run_batch(
                 run_rank,
                 run_unpack=run_unpack,
                 run_goresym=run_goresym,
+                run_extract_pyinstaller=run_extract_pyinstaller,
             )
         except (InvalidPEError, InvalidELFError, UnsupportedFormatError):
             skipped += 1
@@ -1088,6 +1128,13 @@ def _run_batch(
                 )
                 unpacked += 1
                 unpacked_text_note = " [unpacked]"
+
+        if case.static.pyinstaller_extraction is not None and case.static.pyinstaller_extraction.success:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            extracted_dir = out_dir / f"{case.output_basename(now, flags_suffix)}_pyinstaller_extracted"
+            shutil.move(str(pyinstaller_output_dir), str(extracted_dir))
+            case.static.pyinstaller_extraction.output_dir = str(extracted_dir)
+            unpacked_text_note += " [pyinstaller extracted]"
 
         if floss_raw is not None:
             save_raw_output(floss_raw, out_dir, case.output_basename(now, flags_suffix))

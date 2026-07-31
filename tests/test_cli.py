@@ -360,7 +360,7 @@ def test_analyze_saves_output_files_with_capability_flags_suffix(compiled_pe, tm
 def test_capability_flags_suffix_includes_u_when_unpack_selected():
     from watson.cli import _capability_flags_suffix
 
-    suffix = _capability_flags_suffix(True, False, False, True, False, True, False)
+    suffix = _capability_flags_suffix(True, False, False, True, False, True, False, False)
 
     assert suffix == "ydu"
 
@@ -370,7 +370,7 @@ def test_capability_options_includes_unpack_letter():
 
     keys = [key for key, _ in CAPABILITY_OPTIONS]
 
-    assert keys == ["y", "c", "f", "d", "r", "u", "g"]
+    assert keys == ["y", "c", "f", "d", "r", "u", "g", "p"]
 
 
 def test_resolve_upx_reports_unavailable_with_install_hint_when_missing(monkeypatch):
@@ -514,6 +514,7 @@ def test_analyze_with_explicit_floss_flag_never_prompts(compiled_pe, tmp_path, c
             "--diec",
             "--rank-strings",
             "--goresym",
+            "--extract-pyinstaller",
         ]
     )
 
@@ -974,6 +975,7 @@ def test_build_case_respects_explicit_run_yara_and_run_capa_false(compiled_pe, m
         run_die=False,
         run_rank=False,
         run_goresym=False,
+        run_extract_pyinstaller=False,
     )
 
     assert case.static.tools["yara"] == {
@@ -1040,7 +1042,7 @@ def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_r
     compiled_pe, monkeypatch
 ):
     monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
-    answers = iter(["n", "n", "n", "n"])
+    answers = iter(["n", "n", "n", "n", "n"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
 
     case, floss_raw, forced_verbose, ranked_strings_full, _, _, _, _ = build_case(
@@ -1351,6 +1353,53 @@ def test_analyze_unpacks_and_saves_a_second_case_for_a_upx_packed_sample(compile
     assert "Unpacked binary analysis" in captured.out
 
 
+def test_analyze_extracts_and_saves_manifest_when_pyinstaller_detected(compiled_pe, tmp_path, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyinstxtractor", lambda offline: ({"available": True, "reason": None}, "pyinstxtractor-ng")
+    )
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "PyInstaller", "version": None, "string": None}]}],
+    )
+    fake_entries = [{"path": "main.pyc", "size": 10, "pyarmor_protected": True}]
+    monkeypatch.setattr("watson.cli.pyinstaller_extract.extract_file", lambda *a, **k: fake_entries)
+
+    exit_code = main(
+        ["analyze", str(compiled_pe), "--out", str(out_dir), "--diec", "--extract-pyinstaller"]
+    )
+
+    assert exit_code == 0
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith(("_floss.json", "_ranked_strings.json"))]
+    assert len(case_files) == 1
+    data = json.loads(case_files[0].read_text())
+    assert data["static"]["pyinstaller_extraction"]["success"] is True
+    assert data["static"]["pyinstaller_extraction"]["entries"] == fake_entries
+    assert data["static"]["pyinstaller_extraction"]["output_dir"].startswith(str(out_dir))
+    assert Path(data["static"]["pyinstaller_extraction"]["output_dir"]).is_dir()
+
+
+def test_analyze_pyinstaller_extraction_absent_when_die_finds_no_pyinstaller(compiled_pe, tmp_path, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyinstxtractor", lambda offline: ({"available": True, "reason": None}, "pyinstxtractor-ng")
+    )
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr("watson.cli.die_scan_file", lambda *a, **k: [])
+
+    exit_code = main(
+        ["analyze", str(compiled_pe), "--out", str(out_dir), "--diec", "--extract-pyinstaller"]
+    )
+
+    assert exit_code == 0
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith(("_floss.json", "_ranked_strings.json"))]
+    data = json.loads(case_files[0].read_text())
+    assert data["static"]["pyinstaller_extraction"] is None
+
+
 def test_analyze_directory_unpacks_and_saves_second_cases_for_upx_packed_samples(
     compiled_pe, tmp_path, capsys, monkeypatch
 ):
@@ -1555,7 +1604,7 @@ def test_analyze_directory_asks_floss_and_die_confirmation_once_each(
     )
 
     assert exit_code == 0
-    assert call_count["n"] == 4
+    assert call_count["n"] == 5
 
 
 def test_analyze_directory_skips_non_pe_files_and_continues(compiled_pe, tmp_path, capsys, monkeypatch):
@@ -1838,6 +1887,7 @@ def test_capability_flags_suffix_includes_g_when_goresym_selected():
     suffix = watson.cli._capability_flags_suffix(
         attempt_yara=False, attempt_capa=False, run_floss=False,
         run_die=False, run_rank=False, run_unpack=False, run_goresym=True,
+        run_extract_pyinstaller=False,
     )
 
     assert "g" in suffix
@@ -1849,10 +1899,10 @@ def test_resolve_capability_selection_returns_run_goresym_flag_unchanged_when_ex
     result = watson.cli._resolve_capability_selection(
         rules_dir=None, capa_rules_dir=None, run_floss=False, run_die=False,
         run_yara=False, run_capa=False, run_rank=False, run_goresym=True,
-        subject="test.exe",
+        run_extract_pyinstaller=False, subject="test.exe",
     )
 
-    *_, run_goresym, forced_verbose = result
+    *_, run_goresym, run_extract_pyinstaller, forced_verbose = result
     assert run_goresym is True
 
 
