@@ -1689,6 +1689,38 @@ def test_goresym_archive_url_is_none_on_macos(monkeypatch):
     assert watson.cli._goresym_archive_url() is None
 
 
+def test_resolve_goresym_falls_back_to_fetch_with_exe_relpath_on_windows(monkeypatch):
+    from watson.tool_discovery import ToolStatus
+
+    monkeypatch.setattr(
+        "watson.cli.find_binary",
+        lambda name, pip_package=None, offline=False: ToolStatus(
+            name=name, available=False, path=None, reason="GoReSym not found"
+        ),
+    )
+    monkeypatch.setattr("watson.cli.platform.system", lambda: "Windows")
+
+    calls = []
+
+    def fake_fetch(name, binary_relpath, cache_dir, archive_url, offline=False):
+        calls.append((name, binary_relpath, str(cache_dir), archive_url, offline))
+        return ToolStatus(name=name, available=False, path=None, reason="download declined")
+
+    monkeypatch.setattr("watson.cli.find_or_fetch_zip_binary", fake_fetch)
+
+    status, path = watson.cli._resolve_goresym(offline=True)
+
+    assert len(calls) == 1
+    name, binary_relpath, cache_dir, archive_url, offline = calls[0]
+    assert binary_relpath == "GoReSym.exe"
+    assert archive_url == (
+        "https://github.com/mandiant/GoReSym/releases/download/v3.4/GoReSym-windows.zip"
+    )
+    assert offline is True
+    assert status == {"available": False, "reason": "download declined"}
+    assert path is None
+
+
 def test_capability_flags_suffix_includes_g_when_goresym_selected():
     suffix = watson.cli._capability_flags_suffix(
         attempt_yara=False, attempt_capa=False, run_floss=False,

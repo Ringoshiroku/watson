@@ -191,12 +191,16 @@ def _goresym_archive_url() -> str | None:
     return None
 
 
+def _goresym_binary_relpath() -> str:
+    return "GoReSym.exe" if platform.system() == "Windows" else "GoReSym"
+
+
 def _resolve_goresym(offline: bool) -> tuple[dict, str | None]:
     goresym_status = find_binary("GoReSym", pip_package=None, offline=offline)
     if not goresym_status.available:
         goresym_status = find_or_fetch_zip_binary(
             "GoReSym",
-            "GoReSym",
+            _goresym_binary_relpath(),
             cache_dir=GORESYM_CACHE,
             archive_url=_goresym_archive_url(),
             offline=offline,
