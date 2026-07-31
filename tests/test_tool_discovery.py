@@ -1,5 +1,6 @@
 import contextlib
 import io
+import os
 import subprocess
 import zipfile
 
@@ -473,6 +474,8 @@ def test_find_or_fetch_zip_binary_downloads_and_extracts_when_confirmed(tmp_path
     assert status.available is True
     assert status.path == str(cache_dir / "tool" / "bin.exe")
     assert (cache_dir / "tool" / "bin.exe").read_bytes() == b"fake binary contents"
+    if os.name == "posix":
+        assert os.access(cache_dir / "tool" / "bin.exe", os.X_OK)
 
 
 def test_find_or_fetch_zip_binary_declines_when_user_says_no(tmp_path, monkeypatch):

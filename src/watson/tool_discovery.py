@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -194,6 +196,9 @@ def _offer_zip_download(name: str, archive_url: str, cache_dir: Path, binary_rel
         cache_dir.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(tmp_path) as archive:
             archive.extractall(cache_dir)
+        target = Path(cache_dir) / binary_relpath
+        if os.name == "posix" and target.is_file():
+            target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     except (OSError, zipfile.BadZipFile, urllib.error.URLError) as exc:
         print(f"download/extract failed: {exc}")
         return False
