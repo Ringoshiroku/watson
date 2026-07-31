@@ -9,11 +9,15 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from watson.case import Case, ELFMetadata, Identity, PEMetadata, StaticSection, UnpackingResult
+from watson.case import (
+    Case, ELFMetadata, Identity, PEMetadata, PyInstallerExtractionResult, StaticSection, UnpackingResult,
+)
 from watson.capa_scan import CapaScanError, scan_file as capa_scan_file
 from watson.die_scan import DieScanError, identify_packers, scan_file as die_scan_file
 from watson import upx_unpack
 from watson.upx_unpack import UpxUnpackError
+from watson import pyinstaller_extract
+from watson.pyinstaller_extract import PyInstallerExtractError
 from watson.elf_metadata import InvalidELFError, extract_elf_metadata
 from watson.file_format import UnsupportedFormatError, detect_format
 from watson.floss_scan import FlossScanError, flatten_strings, save_raw_output, scan_file as floss_scan_file
@@ -30,6 +34,7 @@ from watson.tool_discovery import (
     confirm,
     find_binary,
     find_module,
+    find_or_fetch_binary,
     find_or_fetch_dir,
     find_or_fetch_zip_binary,
     select_options,
@@ -59,6 +64,13 @@ UPX_CACHE = WATSON_HOME / "tools" / "upx"
 UPX_RELEASE_BASE = f"https://github.com/upx/upx/releases/download/v{UPX_VERSION}"
 UPX_WIN64_URL = f"{UPX_RELEASE_BASE}/upx-{UPX_VERSION}-win64.zip"
 UPX_WIN32_URL = f"{UPX_RELEASE_BASE}/upx-{UPX_VERSION}-win32.zip"
+PYINSTXTRACTOR_VERSION = "2026.07.03"
+PYINSTXTRACTOR_CACHE = WATSON_HOME / "tools" / "pyinstxtractor"
+PYINSTXTRACTOR_RELEASE_BASE = (
+    f"https://github.com/pyinstxtractor/pyinstxtractor-ng/releases/download/{PYINSTXTRACTOR_VERSION}"
+)
+PYINSTXTRACTOR_LINUX_URL = f"{PYINSTXTRACTOR_RELEASE_BASE}/pyinstxtractor-ng"
+PYINSTXTRACTOR_WINDOWS_URL = f"{PYINSTXTRACTOR_RELEASE_BASE}/pyinstxtractor-ng.exe"
 # modules whose absence means this interpreter was built without a matching
 # system -dev header (bz2 breaks FLOSS's networkx import; the others are the
 # same class of silent, build-time-only gap)
@@ -244,6 +256,42 @@ def _resolve_upx(offline: bool) -> tuple[dict, str | None]:
     return {"available": False, "reason": _upx_install_hint()}, None
 
 
+def _pyinstxtractor_install_hint() -> str:
+    return (
+        "no OS package available; download the matching binary from "
+        "https://github.com/pyinstxtractor/pyinstxtractor-ng/releases and place it on PATH, "
+        "or run 'watson setup' to fetch it automatically (Linux/Windows only)"
+    )
+
+
+def _pyinstxtractor_binary_relpath() -> str:
+    return "pyinstxtractor-ng.exe" if platform.system() == "Windows" else "pyinstxtractor-ng"
+
+
+def _pyinstxtractor_download_url() -> str | None:
+    system = platform.system()
+    if system == "Linux":
+        return PYINSTXTRACTOR_LINUX_URL
+    if system == "Windows":
+        return PYINSTXTRACTOR_WINDOWS_URL
+    return None
+
+
+def _resolve_pyinstxtractor(offline: bool) -> tuple[dict, str | None]:
+    status = find_binary("pyinstxtractor-ng", pip_package=None, offline=offline)
+    if not status.available:
+        status = find_or_fetch_binary(
+            "pyinstxtractor-ng",
+            _pyinstxtractor_binary_relpath(),
+            cache_dir=PYINSTXTRACTOR_CACHE,
+            download_url=_pyinstxtractor_download_url(),
+            offline=offline,
+        )
+    if status.available:
+        return {"available": True, "reason": None}, status.path
+    return {"available": False, "reason": _pyinstxtractor_install_hint()}, None
+
+
 def _resolve_stringsifter(offline: bool) -> dict:
     stringsifter_status = find_binary("rank_strings", pip_package="stringsifter", offline=offline)
     return {"available": stringsifter_status.available, "reason": stringsifter_status.reason}
@@ -356,6 +404,7 @@ def build_case(
     run_rank: bool | None = None,
     run_unpack: bool | None = None,
     run_goresym: bool | None = None,
+    run_extract_pyinstaller: bool | None = None,
 ) -> tuple:
     hashes = compute_hashes(file_path)
     file_format = detect_format(file_path)
@@ -534,6 +583,41 @@ def build_case(
             "reason": "unpack not requested (use --unpack)",
         }
 
+    pyinstaller_extraction = None
+    pyinstaller_output_dir = None
+
+    if run_extract_pyinstaller:
+        if not run_die:
+            tools["pyinstxtractor"] = {
+                "available": False,
+                "reason": "extraction not attempted (needs --diec to have run and identify PyInstaller)",
+            }
+        else:
+            tools["pyinstxtractor"], resolved_pyinstxtractor_path = _resolve_pyinstxtractor(offline=True)
+            if tools["pyinstxtractor"]["available"] and "PyInstaller" in identify_packers(die_detections):
+                pyinstaller_output_dir = Path(tempfile.mkdtemp())
+                try:
+                    entries = pyinstaller_extract.extract_file(
+                        file_path, pyinstaller_output_dir, extractor_binary=resolved_pyinstxtractor_path
+                    )
+                    pyinstaller_extraction = PyInstallerExtractionResult(
+                        tool="pyinstxtractor-ng",
+                        success=True,
+                        output_dir=str(pyinstaller_output_dir),
+                        entries=entries,
+                    )
+                except PyInstallerExtractError as exc:
+                    shutil.rmtree(pyinstaller_output_dir, ignore_errors=True)
+                    pyinstaller_output_dir = None
+                    pyinstaller_extraction = PyInstallerExtractionResult(
+                        tool="pyinstxtractor-ng", success=False, reason=str(exc)
+                    )
+    else:
+        tools["pyinstxtractor"] = {
+            "available": False,
+            "reason": "extraction not requested (use --extract-pyinstaller)",
+        }
+
     go_build_info: dict = {}
     goresym_raw = None
 
@@ -578,6 +662,7 @@ def build_case(
         ranked_strings=(ranked_strings_full or [])[:20],
         unpacking=unpacking,
         go_build_info=go_build_info,
+        pyinstaller_extraction=pyinstaller_extraction,
     )
     resolved_capabilities = (attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym)
     flags_suffix = _capability_flags_suffix(
@@ -591,6 +676,7 @@ def build_case(
         flags_suffix,
         resolved_capabilities,
         goresym_raw,
+        pyinstaller_output_dir,
     )
 
 
@@ -744,6 +830,7 @@ def _run_setup() -> int:
     tools["floss"] = _resolve_floss(offline=False)
     tools["diec"], _ = _resolve_die(offline=False)
     tools["goresym"], _ = _resolve_goresym(offline=False)
+    tools["pyinstxtractor"], _ = _resolve_pyinstxtractor(offline=False)
     tools["stringsifter"] = _resolve_stringsifter(offline=False)
 
     print()
@@ -798,7 +885,7 @@ def _run_analyze(
     try:
         (
             case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix,
-            resolved_capabilities, goresym_raw,
+            resolved_capabilities, goresym_raw, _,
         ) = build_case(
             file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die,
             run_rank=run_rank, run_unpack=run_unpack, run_goresym=run_goresym,
@@ -825,7 +912,7 @@ def _run_analyze(
         try:
             (
                 unpacked_case, unpacked_floss_raw, _, unpacked_ranked_strings_full,
-                unpacked_flags_suffix, _, unpacked_goresym_raw,
+                unpacked_flags_suffix, _, unpacked_goresym_raw, _,
             ) = build_case(
                 unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss_resolved, run_die_resolved,
                 attempt_yara, attempt_capa, run_rank_resolved, run_unpack=False,
@@ -928,7 +1015,7 @@ def _run_batch(
     for index, file_path in enumerate(files, start=1):
         try:
             (
-                case, floss_raw, _, ranked_strings_full, _, resolved_capabilities, goresym_raw,
+                case, floss_raw, _, ranked_strings_full, _, resolved_capabilities, goresym_raw, _,
             ) = build_case(
                 file_path,
                 rules_dir,
@@ -968,7 +1055,7 @@ def _run_batch(
             try:
                 (
                     unpacked_case, unpacked_floss_raw, _, unpacked_ranked_strings_full,
-                    unpacked_flags_suffix, _, unpacked_goresym_raw,
+                    unpacked_flags_suffix, _, unpacked_goresym_raw, _,
                 ) = build_case(
                     unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, r_run_floss, r_run_die,
                     r_attempt_yara, r_attempt_capa, r_run_rank, run_unpack=False,
