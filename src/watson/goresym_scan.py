@@ -63,7 +63,9 @@ def extract_build_info(raw: dict) -> dict | None:
         return None
 
     build_info = raw.get("BuildInfo") or {}
-    if not build_info.get("GoVersion"):
+    go_version = build_info.get("GoVersion") or raw.get("Version")
+    user_functions = raw.get("UserFunctions") or []
+    if not go_version and not user_functions:
         return None
 
     main = build_info.get("Main") or {}
@@ -74,7 +76,7 @@ def extract_build_info(raw: dict) -> dict | None:
 
     own_prefixes = _own_package_prefixes(build_info)
     packages: dict = {}
-    for func in raw.get("UserFunctions") or []:
+    for func in user_functions:
         package_name = func.get("PackageName") or ""
         if not _is_own_package(package_name, own_prefixes):
             continue
@@ -84,7 +86,7 @@ def extract_build_info(raw: dict) -> dict | None:
         packages.setdefault(package_name, set()).add(full_name)
 
     return {
-        "go_version": build_info.get("GoVersion"),
+        "go_version": go_version,
         "module_path": build_info.get("Path"),
         "module_version": main.get("Version"),
         "dependencies": dependencies,

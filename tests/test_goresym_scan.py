@@ -106,6 +106,25 @@ def test_extract_build_info_returns_none_when_buildinfo_missing():
     assert extract_build_info(raw) is None
 
 
+def test_extract_build_info_recovers_from_pclntab_when_buildinfo_stripped():
+    # real scenario verified live: buildinfo section wiped (a common, trivial
+    # evasion technique), so BuildInfo has no GoVersion, but GoReSym still
+    # recovers a top-level Version and real UserFunctions via pclntab parsing
+    raw = {
+        "BuildInfo": {},
+        "Version": "go1.24.4",
+        "UserFunctions": [
+            {"PackageName": "main", "FullName": "main.main"},
+        ],
+    }
+
+    result = extract_build_info(raw)
+
+    assert result is not None
+    assert result["go_version"] == "go1.24.4"
+    assert result["packages"] == {"main": ["main.main"]}
+
+
 def test_extract_build_info_builds_expected_shape():
     # based on real GoReSym output captured this session (a binary with a
     # local-module dependency wired via a go.mod replace directive)
