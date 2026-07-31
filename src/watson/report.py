@@ -229,6 +229,13 @@ def _render_ranked_strings_lines(ranked_strings: list) -> list:
     return lines
 
 
+# a large Go binary can recover hundreds of function names per package; the
+# full list is kept in the underlying data (the JSON report and the
+# standalone *_goresym.json sidecar), this only bounds what the plain-text
+# report prints per package so it can't turn into a multi-thousand-line dump.
+_MAX_FUNCTIONS_PER_PACKAGE_DISPLAY = 20
+
+
 def _render_go_build_info_lines(go_build_info: dict) -> list:
     lines = ["Go Build Info", "-" * 13]
     if not go_build_info:
@@ -253,8 +260,12 @@ def _render_go_build_info_lines(go_build_info: dict) -> list:
     if packages:
         for package_name in sorted(packages):
             lines.append(f"  {package_name}")
-            for func in packages[package_name]:
+            funcs = packages[package_name]
+            for func in funcs[:_MAX_FUNCTIONS_PER_PACKAGE_DISPLAY]:
                 lines.append(f"    {func}")
+            omitted = len(funcs) - _MAX_FUNCTIONS_PER_PACKAGE_DISPLAY
+            if omitted > 0:
+                lines.append(f"    ... +{omitted} more")
     else:
         lines.append("  none")
 

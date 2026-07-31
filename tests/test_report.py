@@ -895,3 +895,36 @@ def test_build_text_report_shows_go_build_info():
     assert "Module: watsontestbin ((devel))" in report
     assert "github.com/example/examplelib@v0.0.0" in report
     assert "main.main" in report
+
+
+def test_build_text_report_caps_functions_per_go_package_for_readability():
+    # a large Go binary can recover hundreds of function names per package;
+    # the report should stay skimmable without dropping data from the
+    # underlying case (the full recovery data also lives in the sidecar)
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    functions = [f"main.func{i}" for i in range(25)]
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        go_build_info={
+            "go_version": "go1.24.4",
+            "module_path": "watsontestbin",
+            "module_version": "(devel)",
+            "dependencies": [],
+            "packages": {"main": functions},
+        },
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "main.func0" in report
+    assert "main.func19" in report
+    assert "main.func20" not in report
+    assert "... +5 more" in report
+    # the underlying case data keeps every recovered function name
+    assert len(case.static.go_build_info["packages"]["main"]) == 25
