@@ -240,13 +240,17 @@ what you want you never have to go through a prompt again:
   https://github.com/horsicq/Detect-It-Easy). `watson analyze -d` itself
   only checks whether `diec` is already available, it never fetches or
   installs. Omit to be asked interactively.
-- `-g`, `--goresym`: run GoReSym to recover Go build info (module path,
+- `-g`, `--goresym`, run GoReSym to recover Go build info (module path,
   dependencies with exact versions, and the sample's own function names)
-  from Go binaries. Has no effect on non-Go samples. Needs `GoReSym` on
-  PATH, or auto-fetches a portable build on Linux/Windows if missing. The
-  complete raw recovery data (including Go/runtime-internal symbols this
-  report intentionally leaves out) is written to
-  `<out>/<basename>_goresym.json`.
+  from Go binaries. Has no effect on non-Go samples. Unlike YARA/capa/FLOSS,
+  `GoReSym` isn't pip-installable; run `watson setup` first to have it
+  fetched automatically on Linux/Windows (the official portable build, no
+  installer needed, cached under `~/.watson/tools/goresym/`); macOS has no
+  auto-fetch and falls through to manual install guidance. `watson analyze
+  -g` itself only checks whether `GoReSym` is already available, it never
+  fetches or installs. Omit to be asked interactively. The complete raw
+  recovery data (including Go/runtime-internal symbols this report
+  intentionally leaves out) is written to `<out>/<basename>_goresym.json`.
 - `-r`, `--rank-strings`, rank FLOSS's extracted strings by relevance
   using StringSifter's real ML model (needs `-f`/`--floss` to have also
   run; without it, reported unavailable with a clear reason). The top 20
