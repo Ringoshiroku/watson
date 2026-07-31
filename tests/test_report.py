@@ -234,6 +234,72 @@ def test_build_text_report_omits_unpacking_section_when_absent():
     assert "Unpacking" not in text_report
 
 
+def test_build_text_report_renders_pyinstaller_extraction_section_on_success():
+    from watson.case import PyInstallerExtractionResult
+
+    case = _sample_case()
+    case.static.pyinstaller_extraction = PyInstallerExtractionResult(
+        tool="pyinstxtractor-ng",
+        success=True,
+        output_dir="/out/sample_pyinstaller_extracted",
+        entries=[
+            {"path": "main.pyc", "size": 128, "pyarmor_protected": True},
+            {"path": "python311.dll", "size": 4096, "pyarmor_protected": False},
+        ],
+    )
+
+    report = build_text_report(case)
+
+    assert "PyInstaller Extraction" in report
+    assert "tool: pyinstxtractor-ng" in report
+    assert "result: succeeded" in report
+    assert "output: /out/sample_pyinstaller_extracted" in report
+    assert "entries: 2" in report
+    assert "main.pyc" in report
+    assert "[pyarmor-protected]" in report
+    assert "python311.dll" in report
+
+
+def test_build_text_report_renders_pyinstaller_extraction_section_on_failure():
+    from watson.case import PyInstallerExtractionResult
+
+    case = _sample_case()
+    case.static.pyinstaller_extraction = PyInstallerExtractionResult(
+        tool="pyinstxtractor-ng", success=False, reason="pyinstxtractor-ng not found locally"
+    )
+
+    report = build_text_report(case)
+
+    assert "PyInstaller Extraction" in report
+    assert "result: failed" in report
+    assert "reason: pyinstxtractor-ng not found locally" in report
+
+
+def test_build_text_report_omits_pyinstaller_extraction_section_when_absent():
+    case = _sample_case()
+
+    report = build_text_report(case)
+
+    assert "PyInstaller Extraction" not in report
+
+
+def test_build_text_report_truncates_long_pyinstaller_extraction_manifest():
+    from watson.case import PyInstallerExtractionResult
+
+    case = _sample_case()
+    entries = [{"path": f"file{i}.pyc", "size": 10, "pyarmor_protected": False} for i in range(60)]
+    case.static.pyinstaller_extraction = PyInstallerExtractionResult(
+        tool="pyinstxtractor-ng", success=True, output_dir="/out", entries=entries
+    )
+
+    report = build_text_report(case)
+
+    assert "file0.pyc" in report
+    assert "file49.pyc" in report
+    assert "file50.pyc" not in report
+    assert "+10 more" in report
+
+
 def _sample_case_with_yara_match_detail() -> Case:
     identity = Identity(
         sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"

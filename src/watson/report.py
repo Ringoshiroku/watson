@@ -229,6 +229,29 @@ def _render_ranked_strings_lines(ranked_strings: list) -> list:
     return lines
 
 
+_MAX_PYINSTALLER_EXTRACTION_ENTRIES_DISPLAY = 50
+
+
+def _render_pyinstaller_extraction_lines(extraction) -> list:
+    lines = ["PyInstaller Extraction", "-" * 22]
+    lines.append(f"  tool: {extraction.tool}")
+    lines.append(f"  result: {'succeeded' if extraction.success else 'failed'}")
+    if extraction.reason:
+        lines.append(f"  reason: {extraction.reason}")
+    if extraction.output_dir:
+        lines.append(f"  output: {extraction.output_dir}")
+    if extraction.entries:
+        lines.append(f"  entries: {len(extraction.entries)}")
+        shown = extraction.entries[:_MAX_PYINSTALLER_EXTRACTION_ENTRIES_DISPLAY]
+        for entry in shown:
+            marker = " [pyarmor-protected]" if entry.get("pyarmor_protected") else ""
+            lines.append(f"    {entry['path']} ({entry['size']} bytes){marker}")
+        remainder = len(extraction.entries) - len(shown)
+        if remainder > 0:
+            lines.append(f"    ... (+{remainder} more)")
+    return lines
+
+
 # a large Go binary can recover hundreds of function names per package; the
 # full list is kept in the underlying data (the JSON report and the
 # standalone *_goresym.json sidecar), this only bounds what the plain-text
@@ -339,6 +362,10 @@ def build_text_report(case: Case, verbose: bool = False) -> str:
             lines.append(f"  output: {u.output_path}")
         if u.unpacked_sha256:
             lines.append(f"  unpacked sha256: {u.unpacked_sha256}")
+
+    if case.static.pyinstaller_extraction is not None:
+        lines.append("")
+        lines.extend(_render_pyinstaller_extraction_lines(case.static.pyinstaller_extraction))
 
     lines.append("")
     lines.append("YARA Matches")
