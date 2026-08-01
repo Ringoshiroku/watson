@@ -1934,6 +1934,151 @@ def test_resolve_goresym_falls_back_to_fetch_with_exe_relpath_on_windows(monkeyp
     assert path is None
 
 
+def test_resolve_pyarmor1shot_reports_unavailable_when_pycryptodome_missing(monkeypatch):
+    from watson.tool_discovery import ToolStatus
+
+    monkeypatch.setattr(
+        "watson.cli.find_module",
+        lambda name, module_name, pip_package=None, offline=False: ToolStatus(
+            name=name, available=False, path=None, reason="Crypto python module not found"
+        ),
+    )
+    calls = []
+    monkeypatch.setattr(
+        "watson.cli.find_or_fetch_zip_binary",
+        lambda *a, **k: calls.append(1) or ToolStatus(name="x", available=True, path="x", reason=None),
+    )
+
+    status, shot_script = watson.cli._resolve_pyarmor1shot(offline=True)
+
+    assert status == {"available": False, "reason": "Crypto python module not found"}
+    assert shot_script is None
+    assert calls == []
+
+
+def test_resolve_pyarmor1shot_fetches_linux_bundle_and_derives_shot_script_path(monkeypatch, tmp_path):
+    from watson.tool_discovery import ToolStatus
+
+    monkeypatch.setattr(
+        "watson.cli.find_module",
+        lambda name, module_name, pip_package=None, offline=False: ToolStatus(
+            name=name, available=True, path=module_name, reason=None
+        ),
+    )
+    monkeypatch.setattr("watson.cli.platform.system", lambda: "Linux")
+    monkeypatch.setattr("watson.cli.platform.machine", lambda: "x86_64")
+
+    calls = []
+    resolved_binary = tmp_path / "oneshot" / "pyarmor-1shot"
+
+    def fake_fetch(name, binary_relpath, cache_dir, archive_url, offline=False):
+        calls.append((name, binary_relpath, str(cache_dir), archive_url, offline))
+        return ToolStatus(name=name, available=True, path=str(resolved_binary), reason=None)
+
+    monkeypatch.setattr("watson.cli.find_or_fetch_zip_binary", fake_fetch)
+
+    status, shot_script = watson.cli._resolve_pyarmor1shot(offline=True)
+
+    assert len(calls) == 1
+    name, binary_relpath, cache_dir, archive_url, offline = calls[0]
+    assert binary_relpath == "oneshot/pyarmor-1shot"
+    assert archive_url == (
+        "https://github.com/Lil-House/Pyarmor-Static-Unpack-1shot/releases/download/v0.4.0/"
+        "pyarmor-1shot-v0.4.0-linux-x86_64.zip"
+    )
+    assert offline is True
+    assert status == {"available": True, "reason": None}
+    assert shot_script == str(resolved_binary.parent / "shot.py")
+
+
+def test_resolve_pyarmor1shot_uses_exe_relpath_and_url_on_windows(monkeypatch):
+    from watson.tool_discovery import ToolStatus
+
+    monkeypatch.setattr(
+        "watson.cli.find_module",
+        lambda name, module_name, pip_package=None, offline=False: ToolStatus(
+            name=name, available=True, path=module_name, reason=None
+        ),
+    )
+    monkeypatch.setattr("watson.cli.platform.system", lambda: "Windows")
+    monkeypatch.setattr("watson.cli.platform.machine", lambda: "AMD64")
+
+    calls = []
+
+    def fake_fetch(name, binary_relpath, cache_dir, archive_url, offline=False):
+        calls.append((binary_relpath, archive_url))
+        return ToolStatus(name=name, available=False, path=None, reason="download declined")
+
+    monkeypatch.setattr("watson.cli.find_or_fetch_zip_binary", fake_fetch)
+
+    status, shot_script = watson.cli._resolve_pyarmor1shot(offline=True)
+
+    binary_relpath, archive_url = calls[0]
+    assert binary_relpath == "oneshot/pyarmor-1shot.exe"
+    assert archive_url == (
+        "https://github.com/Lil-House/Pyarmor-Static-Unpack-1shot/releases/download/v0.4.0/"
+        "pyarmor-1shot-v0.4.0-windows-x86_64.zip"
+    )
+    assert status == {"available": False, "reason": "download declined"}
+    assert shot_script is None
+
+
+def test_resolve_pyarmor1shot_uses_darwin_arm64_url_on_macos(monkeypatch):
+    from watson.tool_discovery import ToolStatus
+
+    monkeypatch.setattr(
+        "watson.cli.find_module",
+        lambda name, module_name, pip_package=None, offline=False: ToolStatus(
+            name=name, available=True, path=module_name, reason=None
+        ),
+    )
+    monkeypatch.setattr("watson.cli.platform.system", lambda: "Darwin")
+    monkeypatch.setattr("watson.cli.platform.machine", lambda: "arm64")
+
+    calls = []
+
+    def fake_fetch(name, binary_relpath, cache_dir, archive_url, offline=False):
+        calls.append((binary_relpath, archive_url))
+        return ToolStatus(name=name, available=False, path=None, reason="download declined")
+
+    monkeypatch.setattr("watson.cli.find_or_fetch_zip_binary", fake_fetch)
+
+    watson.cli._resolve_pyarmor1shot(offline=True)
+
+    binary_relpath, archive_url = calls[0]
+    assert binary_relpath == "oneshot/pyarmor-1shot"
+    assert archive_url == (
+        "https://github.com/Lil-House/Pyarmor-Static-Unpack-1shot/releases/download/v0.4.0/"
+        "pyarmor-1shot-v0.4.0-darwin-arm64.zip"
+    )
+
+
+def test_resolve_pyarmor1shot_reports_unavailable_on_unsupported_platform(monkeypatch):
+    from watson.tool_discovery import ToolStatus
+
+    monkeypatch.setattr(
+        "watson.cli.find_module",
+        lambda name, module_name, pip_package=None, offline=False: ToolStatus(
+            name=name, available=True, path=module_name, reason=None
+        ),
+    )
+    monkeypatch.setattr("watson.cli.platform.system", lambda: "Linux")
+    monkeypatch.setattr("watson.cli.platform.machine", lambda: "aarch64")
+
+    calls = []
+    monkeypatch.setattr(
+        "watson.cli.find_or_fetch_zip_binary",
+        lambda *a, **k: calls.append(1) or ToolStatus(name="x", available=True, path="x", reason=None),
+    )
+
+    status, shot_script = watson.cli._resolve_pyarmor1shot(offline=True)
+
+    assert calls == []
+    assert status["available"] is False
+    assert "releases" in status["reason"]
+    assert shot_script is None
+
+
 def test_capability_flags_suffix_includes_g_when_goresym_selected():
     suffix = watson.cli._capability_flags_suffix(
         attempt_yara=False, attempt_capa=False, run_floss=False,

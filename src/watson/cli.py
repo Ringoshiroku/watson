@@ -72,6 +72,14 @@ PYINSTXTRACTOR_RELEASE_BASE = (
 )
 PYINSTXTRACTOR_LINUX_URL = f"{PYINSTXTRACTOR_RELEASE_BASE}/pyinstxtractor-ng"
 PYINSTXTRACTOR_WINDOWS_URL = f"{PYINSTXTRACTOR_RELEASE_BASE}/pyinstxtractor-ng.exe"
+PYARMOR1SHOT_VERSION = "v0.4.0"
+PYARMOR1SHOT_CACHE = WATSON_HOME / "tools" / "pyarmor1shot"
+PYARMOR1SHOT_RELEASE_BASE = (
+    f"https://github.com/Lil-House/Pyarmor-Static-Unpack-1shot/releases/download/{PYARMOR1SHOT_VERSION}"
+)
+PYARMOR1SHOT_LINUX_URL = f"{PYARMOR1SHOT_RELEASE_BASE}/pyarmor-1shot-{PYARMOR1SHOT_VERSION}-linux-x86_64.zip"
+PYARMOR1SHOT_WINDOWS_URL = f"{PYARMOR1SHOT_RELEASE_BASE}/pyarmor-1shot-{PYARMOR1SHOT_VERSION}-windows-x86_64.zip"
+PYARMOR1SHOT_DARWIN_URL = f"{PYARMOR1SHOT_RELEASE_BASE}/pyarmor-1shot-{PYARMOR1SHOT_VERSION}-darwin-arm64.zip"
 # modules whose absence means this interpreter was built without a matching
 # system -dev header (bz2 breaks FLOSS's networkx import; the others are the
 # same class of silent, build-time-only gap)
@@ -292,6 +300,62 @@ def _resolve_pyinstxtractor(offline: bool) -> tuple[dict, str | None]:
     if status.available:
         return {"available": True, "reason": None}, status.path
     return {"available": False, "reason": _pyinstxtractor_install_hint()}, None
+
+
+def _pyarmor1shot_install_hint() -> str:
+    return (
+        "no OS package available; download the matching build from "
+        "https://github.com/Lil-House/Pyarmor-Static-Unpack-1shot/releases and place the "
+        "'oneshot' directory somewhere stable, or run 'watson setup' to fetch it "
+        "automatically (Linux x86_64, Windows x86_64, macOS arm64 only)"
+    )
+
+
+def _pyarmor1shot_binary_relpath() -> str | None:
+    system = platform.system()
+    machine = platform.machine().lower()
+    if system == "Linux" and machine in ("x86_64", "amd64"):
+        return "oneshot/pyarmor-1shot"
+    if system == "Windows" and machine in ("amd64", "x86_64"):
+        return "oneshot/pyarmor-1shot.exe"
+    if system == "Darwin" and machine in ("arm64", "aarch64"):
+        return "oneshot/pyarmor-1shot"
+    return None
+
+
+def _pyarmor1shot_download_url() -> str | None:
+    system = platform.system()
+    machine = platform.machine().lower()
+    if system == "Linux" and machine in ("x86_64", "amd64"):
+        return PYARMOR1SHOT_LINUX_URL
+    if system == "Windows" and machine in ("amd64", "x86_64"):
+        return PYARMOR1SHOT_WINDOWS_URL
+    if system == "Darwin" and machine in ("arm64", "aarch64"):
+        return PYARMOR1SHOT_DARWIN_URL
+    return None
+
+
+def _resolve_pyarmor1shot(offline: bool) -> tuple[dict, str | None]:
+    crypto_status = find_module("pycryptodome", "Crypto", pip_package="pycryptodome", offline=offline)
+    if not crypto_status.available:
+        return {"available": False, "reason": crypto_status.reason}, None
+
+    binary_relpath = _pyarmor1shot_binary_relpath()
+    if binary_relpath is None:
+        return {"available": False, "reason": _pyarmor1shot_install_hint()}, None
+
+    bundle_status = find_or_fetch_zip_binary(
+        "pyarmor-1shot",
+        binary_relpath,
+        cache_dir=PYARMOR1SHOT_CACHE,
+        archive_url=_pyarmor1shot_download_url(),
+        offline=offline,
+    )
+    if not bundle_status.available:
+        return {"available": False, "reason": bundle_status.reason}, None
+
+    shot_script = str(Path(bundle_status.path).parent / "shot.py")
+    return {"available": True, "reason": None}, shot_script
 
 
 def _resolve_stringsifter(offline: bool) -> dict:
@@ -876,6 +940,7 @@ def _run_setup() -> int:
     tools["diec"], _ = _resolve_die(offline=False)
     tools["goresym"], _ = _resolve_goresym(offline=False)
     tools["pyinstxtractor"], _ = _resolve_pyinstxtractor(offline=False)
+    tools["pyarmor1shot"], _ = _resolve_pyarmor1shot(offline=False)
     tools["stringsifter"] = _resolve_stringsifter(offline=False)
 
     print()
