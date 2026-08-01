@@ -1610,6 +1610,63 @@ def test_analyze_pyinstaller_extraction_absent_when_die_finds_no_pyinstaller(com
     assert data["static"]["pyinstaller_extraction"] is None
 
 
+def test_analyze_unpacks_pyarmor_and_saves_manifest_when_protected_entries_found(compiled_pe, tmp_path, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyinstxtractor", lambda offline: ({"available": True, "reason": None}, "pyinstxtractor-ng")
+    )
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "PyInstaller", "version": None, "string": None}]}],
+    )
+    fake_extraction_entries = [{"path": "main.pyc", "size": 10, "pyarmor_protected": True}]
+    monkeypatch.setattr("watson.cli.pyinstaller_extract.extract_file", lambda *a, **k: fake_extraction_entries)
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyarmor1shot", lambda offline: ({"available": True, "reason": None}, "/opt/oneshot/shot.py")
+    )
+    fake_unpack_entries = [{"path": "main.pyc.1shot.py", "size": 128}]
+    monkeypatch.setattr("watson.cli.pyarmor_unpack.unpack_dir", lambda *a, **k: fake_unpack_entries)
+
+    exit_code = main(
+        ["analyze", str(compiled_pe), "--out", str(out_dir), "--diec", "--extract-pyinstaller"]
+    )
+
+    assert exit_code == 0
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith(("_floss.json", "_ranked_strings.json"))]
+    assert len(case_files) == 1
+    data = json.loads(case_files[0].read_text())
+    assert data["static"]["pyarmor_unpacking"]["success"] is True
+    assert data["static"]["pyarmor_unpacking"]["entries"] == fake_unpack_entries
+    assert data["static"]["pyarmor_unpacking"]["output_dir"].startswith(str(out_dir))
+    assert Path(data["static"]["pyarmor_unpacking"]["output_dir"]).is_dir()
+
+
+def test_analyze_pyarmor_unpacking_absent_when_nothing_protected(compiled_pe, tmp_path, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyinstxtractor", lambda offline: ({"available": True, "reason": None}, "pyinstxtractor-ng")
+    )
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "PyInstaller", "version": None, "string": None}]}],
+    )
+    fake_entries = [{"path": "python311.dll", "size": 20, "pyarmor_protected": False}]
+    monkeypatch.setattr("watson.cli.pyinstaller_extract.extract_file", lambda *a, **k: fake_entries)
+
+    exit_code = main(
+        ["analyze", str(compiled_pe), "--out", str(out_dir), "--diec", "--extract-pyinstaller"]
+    )
+
+    assert exit_code == 0
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith(("_floss.json", "_ranked_strings.json"))]
+    data = json.loads(case_files[0].read_text())
+    assert data["static"]["pyarmor_unpacking"] is None
+
+
 def test_analyze_directory_unpacks_and_saves_second_cases_for_upx_packed_samples(
     compiled_pe, tmp_path, capsys, monkeypatch
 ):

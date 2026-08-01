@@ -1097,6 +1097,12 @@ def _run_analyze(
         shutil.move(str(pyinstaller_output_dir), str(extracted_dir))
         case.static.pyinstaller_extraction.output_dir = str(extracted_dir)
 
+    if case.static.pyarmor_unpacking is not None and case.static.pyarmor_unpacking.success:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        pyarmor_dir = out_dir / f"{case.output_basename(now, flags_suffix)}_pyarmor_unpacked"
+        shutil.move(str(pyarmor_output_dir), str(pyarmor_dir))
+        case.static.pyarmor_unpacking.output_dir = str(pyarmor_dir)
+
     if floss_raw is not None:
         save_raw_output(floss_raw, out_dir, case.output_basename(now, flags_suffix))
     if ranked_strings_full is not None:
@@ -1257,6 +1263,13 @@ def _run_batch(
             shutil.move(str(pyinstaller_output_dir), str(extracted_dir))
             case.static.pyinstaller_extraction.output_dir = str(extracted_dir)
             unpacked_text_note += " [pyinstaller extracted]"
+
+        if case.static.pyarmor_unpacking is not None and case.static.pyarmor_unpacking.success:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            pyarmor_dir = out_dir / f"{case.output_basename(now, flags_suffix)}_pyarmor_unpacked"
+            shutil.move(str(pyarmor_output_dir), str(pyarmor_dir))
+            case.static.pyarmor_unpacking.output_dir = str(pyarmor_dir)
+            unpacked_text_note += " [pyarmor unpacked]"
 
         if floss_raw is not None:
             save_raw_output(floss_raw, out_dir, case.output_basename(now, flags_suffix))
