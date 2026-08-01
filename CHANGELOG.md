@@ -8,6 +8,13 @@ correlation).
 
 ## [Unreleased]
 
+### Added
+- Automatic PyArmor unpacking: when `-p`/`--extract-pyinstaller` flags any
+  extracted entry as PyArmor-protected, watson decrypts and decompiles it
+  with `pyarmor-1shot` and records a manifest in the report. No flag of its
+  own; `watson setup` fetches the tool on Linux x86_64, Windows x86_64, and
+  macOS arm64.
+
 ### Fixed
 - `-u`/`--unpack` selected from the interactive "which analyses do you
   want to run?" prompt was silently discarded, and an explicit

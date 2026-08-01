@@ -73,6 +73,15 @@ class PyInstallerExtractionResult:
 
 
 @dataclass
+class PyArmorUnpackResult:
+    tool: str
+    success: bool
+    reason: Optional[str] = None
+    output_dir: Optional[str] = None
+    entries: list = field(default_factory=list)
+
+
+@dataclass
 class StaticSection:
     pe_metadata: Optional[PEMetadata] = None
     elf_metadata: Optional[ELFMetadata] = None
@@ -86,6 +95,7 @@ class StaticSection:
     unpacking: Optional[UnpackingResult] = None
     go_build_info: dict = field(default_factory=dict)
     pyinstaller_extraction: Optional[PyInstallerExtractionResult] = None
+    pyarmor_unpacking: Optional[PyArmorUnpackResult] = None
 
 
 @dataclass
@@ -110,6 +120,8 @@ class Case:
         pyinstaller_extraction = (
             PyInstallerExtractionResult(**pyinstaller_extraction_data) if pyinstaller_extraction_data else None
         )
+        pyarmor_unpacking_data = static_data.get("pyarmor_unpacking")
+        pyarmor_unpacking = PyArmorUnpackResult(**pyarmor_unpacking_data) if pyarmor_unpacking_data else None
         static = StaticSection(
             pe_metadata=pe_metadata,
             elf_metadata=elf_metadata,
@@ -123,6 +135,7 @@ class Case:
             unpacking=unpacking,
             go_build_info=static_data.get("go_build_info", {}),
             pyinstaller_extraction=pyinstaller_extraction,
+            pyarmor_unpacking=pyarmor_unpacking,
         )
         return cls(identity=identity, static=static)
 

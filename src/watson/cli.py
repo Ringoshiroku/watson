@@ -11,7 +11,8 @@ from importlib.metadata import PackageNotFoundError, version as _package_version
 from pathlib import Path
 
 from watson.case import (
-    Case, ELFMetadata, Identity, PEMetadata, PyInstallerExtractionResult, StaticSection, UnpackingResult,
+    Case, ELFMetadata, Identity, PEMetadata, PyArmorUnpackResult, PyInstallerExtractionResult, StaticSection,
+    UnpackingResult,
 )
 from watson.capa_scan import CapaScanError, scan_file as capa_scan_file
 from watson.die_scan import DieScanError, identify_packers, scan_file as die_scan_file
@@ -19,6 +20,8 @@ from watson import upx_unpack
 from watson.upx_unpack import UpxUnpackError
 from watson import pyinstaller_extract
 from watson.pyinstaller_extract import PyInstallerExtractError
+from watson import pyarmor_unpack
+from watson.pyarmor_unpack import PyArmorUnpackError
 from watson.elf_metadata import InvalidELFError, extract_elf_metadata
 from watson.file_format import UnsupportedFormatError, detect_format
 from watson.floss_scan import FlossScanError, flatten_strings, save_raw_output, scan_file as floss_scan_file
@@ -72,6 +75,14 @@ PYINSTXTRACTOR_RELEASE_BASE = (
 )
 PYINSTXTRACTOR_LINUX_URL = f"{PYINSTXTRACTOR_RELEASE_BASE}/pyinstxtractor-ng"
 PYINSTXTRACTOR_WINDOWS_URL = f"{PYINSTXTRACTOR_RELEASE_BASE}/pyinstxtractor-ng.exe"
+PYARMOR1SHOT_VERSION = "v0.4.0"
+PYARMOR1SHOT_CACHE = WATSON_HOME / "tools" / "pyarmor1shot"
+PYARMOR1SHOT_RELEASE_BASE = (
+    f"https://github.com/Lil-House/Pyarmor-Static-Unpack-1shot/releases/download/{PYARMOR1SHOT_VERSION}"
+)
+PYARMOR1SHOT_LINUX_URL = f"{PYARMOR1SHOT_RELEASE_BASE}/pyarmor-1shot-{PYARMOR1SHOT_VERSION}-linux-x86_64.zip"
+PYARMOR1SHOT_WINDOWS_URL = f"{PYARMOR1SHOT_RELEASE_BASE}/pyarmor-1shot-{PYARMOR1SHOT_VERSION}-windows-x86_64.zip"
+PYARMOR1SHOT_DARWIN_URL = f"{PYARMOR1SHOT_RELEASE_BASE}/pyarmor-1shot-{PYARMOR1SHOT_VERSION}-darwin-arm64.zip"
 # modules whose absence means this interpreter was built without a matching
 # system -dev header (bz2 breaks FLOSS's networkx import; the others are the
 # same class of silent, build-time-only gap)
@@ -292,6 +303,62 @@ def _resolve_pyinstxtractor(offline: bool) -> tuple[dict, str | None]:
     if status.available:
         return {"available": True, "reason": None}, status.path
     return {"available": False, "reason": _pyinstxtractor_install_hint()}, None
+
+
+def _pyarmor1shot_install_hint() -> str:
+    return (
+        "no OS package available; download the matching build from "
+        "https://github.com/Lil-House/Pyarmor-Static-Unpack-1shot/releases and place the "
+        "'oneshot' directory somewhere stable, or run 'watson setup' to fetch it "
+        "automatically (Linux x86_64, Windows x86_64, macOS arm64 only)"
+    )
+
+
+def _pyarmor1shot_binary_relpath() -> str | None:
+    system = platform.system()
+    machine = platform.machine().lower()
+    if system == "Linux" and machine in ("x86_64", "amd64"):
+        return "oneshot/pyarmor-1shot"
+    if system == "Windows" and machine in ("amd64", "x86_64"):
+        return "oneshot/pyarmor-1shot.exe"
+    if system == "Darwin" and machine in ("arm64", "aarch64"):
+        return "oneshot/pyarmor-1shot"
+    return None
+
+
+def _pyarmor1shot_download_url() -> str | None:
+    system = platform.system()
+    machine = platform.machine().lower()
+    if system == "Linux" and machine in ("x86_64", "amd64"):
+        return PYARMOR1SHOT_LINUX_URL
+    if system == "Windows" and machine in ("amd64", "x86_64"):
+        return PYARMOR1SHOT_WINDOWS_URL
+    if system == "Darwin" and machine in ("arm64", "aarch64"):
+        return PYARMOR1SHOT_DARWIN_URL
+    return None
+
+
+def _resolve_pyarmor1shot(offline: bool) -> tuple[dict, str | None]:
+    crypto_status = find_module("pycryptodome", "Crypto", pip_package="pycryptodome", offline=offline)
+    if not crypto_status.available:
+        return {"available": False, "reason": crypto_status.reason}, None
+
+    binary_relpath = _pyarmor1shot_binary_relpath()
+    if binary_relpath is None:
+        return {"available": False, "reason": _pyarmor1shot_install_hint()}, None
+
+    bundle_status = find_or_fetch_zip_binary(
+        "pyarmor-1shot",
+        binary_relpath,
+        cache_dir=PYARMOR1SHOT_CACHE,
+        archive_url=_pyarmor1shot_download_url(),
+        offline=offline,
+    )
+    if not bundle_status.available:
+        return {"available": False, "reason": bundle_status.reason}, None
+
+    shot_script = str(Path(bundle_status.path).parent / "shot.py")
+    return {"available": True, "reason": None}, shot_script
 
 
 def _resolve_stringsifter(offline: bool) -> dict:
@@ -640,6 +707,44 @@ def build_case(
             "reason": "extraction not requested (use --extract-pyinstaller)",
         }
 
+    pyarmor_unpacking = None
+    pyarmor_output_dir = None
+
+    if (
+        pyinstaller_extraction is not None
+        and pyinstaller_extraction.success
+        and any(entry["pyarmor_protected"] for entry in pyinstaller_extraction.entries)
+    ):
+        tools["pyarmor1shot"], resolved_shot_script = _resolve_pyarmor1shot(offline=True)
+        if tools["pyarmor1shot"]["available"]:
+            pyarmor_output_dir = Path(tempfile.mkdtemp())
+            try:
+                entries = pyarmor_unpack.unpack_dir(
+                    pyinstaller_output_dir, pyarmor_output_dir, shot_script=resolved_shot_script
+                )
+                pyarmor_unpacking = PyArmorUnpackResult(
+                    tool="pyarmor-1shot",
+                    success=True,
+                    output_dir=str(pyarmor_output_dir),
+                    entries=entries,
+                )
+            except PyArmorUnpackError as exc:
+                shutil.rmtree(pyarmor_output_dir, ignore_errors=True)
+                pyarmor_output_dir = None
+                pyarmor_unpacking = PyArmorUnpackResult(
+                    tool="pyarmor-1shot", success=False, reason=str(exc)
+                )
+    elif pyinstaller_extraction is None:
+        tools["pyarmor1shot"] = {
+            "available": False,
+            "reason": "not attempted (PyInstaller extraction did not run)",
+        }
+    else:
+        tools["pyarmor1shot"] = {
+            "available": False,
+            "reason": "not attempted (no PyArmor-protected entries found by PyInstaller extraction)",
+        }
+
     go_build_info: dict = {}
     goresym_raw = None
 
@@ -685,6 +790,7 @@ def build_case(
         unpacking=unpacking,
         go_build_info=go_build_info,
         pyinstaller_extraction=pyinstaller_extraction,
+        pyarmor_unpacking=pyarmor_unpacking,
     )
     resolved_capabilities = (attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym)
     flags_suffix = _capability_flags_suffix(
@@ -700,6 +806,7 @@ def build_case(
         resolved_capabilities,
         goresym_raw,
         pyinstaller_output_dir,
+        pyarmor_output_dir,
     )
 
 
@@ -876,6 +983,7 @@ def _run_setup() -> int:
     tools["diec"], _ = _resolve_die(offline=False)
     tools["goresym"], _ = _resolve_goresym(offline=False)
     tools["pyinstxtractor"], _ = _resolve_pyinstxtractor(offline=False)
+    tools["pyarmor1shot"], _ = _resolve_pyarmor1shot(offline=False)
     tools["stringsifter"] = _resolve_stringsifter(offline=False)
 
     print()
@@ -932,7 +1040,7 @@ def _run_analyze(
     try:
         (
             case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix,
-            resolved_capabilities, goresym_raw, pyinstaller_output_dir,
+            resolved_capabilities, goresym_raw, pyinstaller_output_dir, pyarmor_output_dir,
         ) = build_case(
             file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die,
             run_rank=run_rank, run_unpack=run_unpack, run_goresym=run_goresym,
@@ -960,7 +1068,7 @@ def _run_analyze(
         try:
             (
                 unpacked_case, unpacked_floss_raw, _, unpacked_ranked_strings_full,
-                unpacked_flags_suffix, _, unpacked_goresym_raw, _,
+                unpacked_flags_suffix, _, unpacked_goresym_raw, _, _,
             ) = build_case(
                 unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss_resolved, run_die_resolved,
                 attempt_yara, attempt_capa, run_rank_resolved, run_unpack=False,
@@ -993,6 +1101,12 @@ def _run_analyze(
         extracted_dir = out_dir / f"{case.output_basename(now, flags_suffix)}_pyinstaller_extracted"
         shutil.move(str(pyinstaller_output_dir), str(extracted_dir))
         case.static.pyinstaller_extraction.output_dir = str(extracted_dir)
+
+    if case.static.pyarmor_unpacking is not None and case.static.pyarmor_unpacking.success:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        pyarmor_dir = out_dir / f"{case.output_basename(now, flags_suffix)}_pyarmor_unpacked"
+        shutil.move(str(pyarmor_output_dir), str(pyarmor_dir))
+        case.static.pyarmor_unpacking.output_dir = str(pyarmor_dir)
 
     if floss_raw is not None:
         save_raw_output(floss_raw, out_dir, case.output_basename(now, flags_suffix))
@@ -1073,7 +1187,7 @@ def _run_batch(
         try:
             (
                 case, floss_raw, _, ranked_strings_full, _, resolved_capabilities, goresym_raw,
-                pyinstaller_output_dir,
+                pyinstaller_output_dir, pyarmor_output_dir,
             ) = build_case(
                 file_path,
                 rules_dir,
@@ -1114,7 +1228,7 @@ def _run_batch(
             try:
                 (
                     unpacked_case, unpacked_floss_raw, _, unpacked_ranked_strings_full,
-                    unpacked_flags_suffix, _, unpacked_goresym_raw, _,
+                    unpacked_flags_suffix, _, unpacked_goresym_raw, _, _,
                 ) = build_case(
                     unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, r_run_floss, r_run_die,
                     r_attempt_yara, r_attempt_capa, r_run_rank, run_unpack=False,
@@ -1154,6 +1268,13 @@ def _run_batch(
             shutil.move(str(pyinstaller_output_dir), str(extracted_dir))
             case.static.pyinstaller_extraction.output_dir = str(extracted_dir)
             unpacked_text_note += " [pyinstaller extracted]"
+
+        if case.static.pyarmor_unpacking is not None and case.static.pyarmor_unpacking.success:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            pyarmor_dir = out_dir / f"{case.output_basename(now, flags_suffix)}_pyarmor_unpacked"
+            shutil.move(str(pyarmor_output_dir), str(pyarmor_dir))
+            case.static.pyarmor_unpacking.output_dir = str(pyarmor_dir)
+            unpacked_text_note += " [pyarmor unpacked]"
 
         if floss_raw is not None:
             save_raw_output(floss_raw, out_dir, case.output_basename(now, flags_suffix))
