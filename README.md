@@ -264,12 +264,21 @@ what you want you never have to go through a prompt again:
   and record a manifest (file list, sizes, and which entries look
   PyArmor-protected) in the report; needs `-d`/`--diec` to have run and
   identified PyInstaller. This is a manifest step only, it does not
-  recursively re-analyze extracted files or unpack PyArmor-protected
-  content itself. Unlike YARA/capa/FLOSS, `pyinstxtractor-ng` isn't
-  pip-installable; run `watson setup` first to have it fetched
+  recursively re-analyze extracted files. If any extracted entry looks
+  PyArmor-protected, watson automatically decrypts and decompiles it
+  with `pyarmor-1shot` and records a second manifest ("PyArmor Unpack"
+  in the report); this has no flag of its own, it rides entirely on
+  `-p` finding protected content. `pyarmor-1shot` needs `pycryptodome`
+  (offered for interactive pip install, same as `yara-python`) plus its
+  own release bundle; `watson setup` fetches that automatically on
+  Linux x86_64, Windows x86_64, and macOS arm64 (cached under
+  `~/.watson/tools/pyarmor1shot/`), other platforms fall through to
+  manual install guidance. Unlike YARA/capa/FLOSS, `pyinstxtractor-ng`
+  isn't pip-installable; run `watson setup` first to have it fetched
   automatically on Linux/Windows (cached under
   `~/.watson/tools/pyinstxtractor/`); macOS has no auto-fetch and falls
-  through to manual install guidance. Omit to be asked interactively.
+  through to manual install guidance. Omit `-p` to be asked
+  interactively.
 - `-r`, `--rank-strings`, rank FLOSS's extracted strings by relevance
   using StringSifter's real ML model (needs `-f`/`--floss` to have also
   run; without it, reported unavailable with a clear reason). The top 20
@@ -429,7 +438,8 @@ capability/ATT&CK/MBC analysis, FLOSS string extraction with IOC-pattern
 flagging, StringSifter relevance ranking of extracted strings, a
 heuristic type/risk classification, Detect It Easy file
 type/compiler/packer detection, and PyInstaller extraction with
-PyArmor-protection flagging (`-p`), all wired through `watson analyze`
+PyArmor-protection flagging and automatic pyarmor-1shot unpacking
+(`-p`), all wired through `watson analyze`
 (including batch/directory mode, which now handles a mix of PE and ELF
 files in the same run), with `watson setup` handling interactive
 fetch/install for every optional rule set or tool.
