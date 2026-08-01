@@ -1667,6 +1667,46 @@ def test_analyze_pyarmor_unpacking_absent_when_nothing_protected(compiled_pe, tm
     assert data["static"]["pyarmor_unpacking"] is None
 
 
+def test_analyze_directory_unpacks_pyarmor_and_saves_manifest_for_protected_entries(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    samples_dir = tmp_path / "samples"
+    samples_dir.mkdir()
+    shutil.copy(compiled_pe, samples_dir / "one.exe")
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyinstxtractor", lambda offline: ({"available": True, "reason": None}, "pyinstxtractor-ng")
+    )
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "PyInstaller", "version": None, "string": None}]}],
+    )
+    fake_extraction_entries = [{"path": "main.pyc", "size": 10, "pyarmor_protected": True}]
+    monkeypatch.setattr("watson.cli.pyinstaller_extract.extract_file", lambda *a, **k: fake_extraction_entries)
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyarmor1shot", lambda offline: ({"available": True, "reason": None}, "/opt/oneshot/shot.py")
+    )
+    fake_unpack_entries = [{"path": "main.pyc.1shot.py", "size": 128}]
+    monkeypatch.setattr("watson.cli.pyarmor_unpack.unpack_dir", lambda *a, **k: fake_unpack_entries)
+
+    exit_code = main(
+        ["analyze", str(samples_dir), "--out", str(out_dir), "--diec", "--extract-pyinstaller"]
+    )
+
+    assert exit_code == 0
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith(("_floss.json", "_ranked_strings.json"))]
+    assert len(case_files) == 1
+    data = json.loads(case_files[0].read_text())
+    assert data["static"]["pyarmor_unpacking"]["success"] is True
+    pyarmor_dir = Path(data["static"]["pyarmor_unpacking"]["output_dir"])
+    assert pyarmor_dir.is_dir()
+    assert str(pyarmor_dir).startswith(str(out_dir))
+    captured = capsys.readouterr()
+    assert "[pyarmor unpacked]" in captured.err
+
+
 def test_analyze_directory_unpacks_and_saves_second_cases_for_upx_packed_samples(
     compiled_pe, tmp_path, capsys, monkeypatch
 ):

@@ -734,6 +734,11 @@ def build_case(
                 pyarmor_unpacking = PyArmorUnpackResult(
                     tool="pyarmor-1shot", success=False, reason=str(exc)
                 )
+    elif pyinstaller_extraction is None:
+        tools["pyarmor1shot"] = {
+            "available": False,
+            "reason": "not attempted (PyInstaller extraction did not run)",
+        }
     else:
         tools["pyarmor1shot"] = {
             "available": False,
