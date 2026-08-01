@@ -11,7 +11,8 @@ from importlib.metadata import PackageNotFoundError, version as _package_version
 from pathlib import Path
 
 from watson.case import (
-    Case, ELFMetadata, Identity, PEMetadata, PyInstallerExtractionResult, StaticSection, UnpackingResult,
+    Case, ELFMetadata, Identity, PEMetadata, PyArmorUnpackResult, PyInstallerExtractionResult, StaticSection,
+    UnpackingResult,
 )
 from watson.capa_scan import CapaScanError, scan_file as capa_scan_file
 from watson.die_scan import DieScanError, identify_packers, scan_file as die_scan_file
@@ -19,6 +20,8 @@ from watson import upx_unpack
 from watson.upx_unpack import UpxUnpackError
 from watson import pyinstaller_extract
 from watson.pyinstaller_extract import PyInstallerExtractError
+from watson import pyarmor_unpack
+from watson.pyarmor_unpack import PyArmorUnpackError
 from watson.elf_metadata import InvalidELFError, extract_elf_metadata
 from watson.file_format import UnsupportedFormatError, detect_format
 from watson.floss_scan import FlossScanError, flatten_strings, save_raw_output, scan_file as floss_scan_file
@@ -704,6 +707,39 @@ def build_case(
             "reason": "extraction not requested (use --extract-pyinstaller)",
         }
 
+    pyarmor_unpacking = None
+    pyarmor_output_dir = None
+
+    if (
+        pyinstaller_extraction is not None
+        and pyinstaller_extraction.success
+        and any(entry["pyarmor_protected"] for entry in pyinstaller_extraction.entries)
+    ):
+        tools["pyarmor1shot"], resolved_shot_script = _resolve_pyarmor1shot(offline=True)
+        if tools["pyarmor1shot"]["available"]:
+            pyarmor_output_dir = Path(tempfile.mkdtemp())
+            try:
+                entries = pyarmor_unpack.unpack_dir(
+                    pyinstaller_output_dir, pyarmor_output_dir, shot_script=resolved_shot_script
+                )
+                pyarmor_unpacking = PyArmorUnpackResult(
+                    tool="pyarmor-1shot",
+                    success=True,
+                    output_dir=str(pyarmor_output_dir),
+                    entries=entries,
+                )
+            except PyArmorUnpackError as exc:
+                shutil.rmtree(pyarmor_output_dir, ignore_errors=True)
+                pyarmor_output_dir = None
+                pyarmor_unpacking = PyArmorUnpackResult(
+                    tool="pyarmor-1shot", success=False, reason=str(exc)
+                )
+    else:
+        tools["pyarmor1shot"] = {
+            "available": False,
+            "reason": "not attempted (no PyArmor-protected entries found by PyInstaller extraction)",
+        }
+
     go_build_info: dict = {}
     goresym_raw = None
 
@@ -749,6 +785,7 @@ def build_case(
         unpacking=unpacking,
         go_build_info=go_build_info,
         pyinstaller_extraction=pyinstaller_extraction,
+        pyarmor_unpacking=pyarmor_unpacking,
     )
     resolved_capabilities = (attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym)
     flags_suffix = _capability_flags_suffix(
@@ -764,6 +801,7 @@ def build_case(
         resolved_capabilities,
         goresym_raw,
         pyinstaller_output_dir,
+        pyarmor_output_dir,
     )
 
 
@@ -997,7 +1035,7 @@ def _run_analyze(
     try:
         (
             case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix,
-            resolved_capabilities, goresym_raw, pyinstaller_output_dir,
+            resolved_capabilities, goresym_raw, pyinstaller_output_dir, pyarmor_output_dir,
         ) = build_case(
             file_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die,
             run_rank=run_rank, run_unpack=run_unpack, run_goresym=run_goresym,
@@ -1025,7 +1063,7 @@ def _run_analyze(
         try:
             (
                 unpacked_case, unpacked_floss_raw, _, unpacked_ranked_strings_full,
-                unpacked_flags_suffix, _, unpacked_goresym_raw, _,
+                unpacked_flags_suffix, _, unpacked_goresym_raw, _, _,
             ) = build_case(
                 unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss_resolved, run_die_resolved,
                 attempt_yara, attempt_capa, run_rank_resolved, run_unpack=False,
@@ -1138,7 +1176,7 @@ def _run_batch(
         try:
             (
                 case, floss_raw, _, ranked_strings_full, _, resolved_capabilities, goresym_raw,
-                pyinstaller_output_dir,
+                pyinstaller_output_dir, pyarmor_output_dir,
             ) = build_case(
                 file_path,
                 rules_dir,
@@ -1179,7 +1217,7 @@ def _run_batch(
             try:
                 (
                     unpacked_case, unpacked_floss_raw, _, unpacked_ranked_strings_full,
-                    unpacked_flags_suffix, _, unpacked_goresym_raw, _,
+                    unpacked_flags_suffix, _, unpacked_goresym_raw, _, _,
                 ) = build_case(
                     unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, r_run_floss, r_run_die,
                     r_attempt_yara, r_attempt_capa, r_run_rank, run_unpack=False,

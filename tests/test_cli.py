@@ -1017,7 +1017,7 @@ def test_build_case_respects_explicit_run_yara_and_run_capa_false(compiled_pe, m
 
     monkeypatch.setattr("builtins.input", fail_if_called)
 
-    case, floss_raw, forced_verbose, ranked_strings_full, _, _, _, _ = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1096,7 +1096,7 @@ def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_r
     answers = iter(["n", "n", "n", "n", "n", "n"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
 
-    case, floss_raw, forced_verbose, ranked_strings_full, _, _, _, _ = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, _, _, _, _, _ = build_case(
         compiled_pe, run_yara=False, run_capa=False
     )
 
@@ -1106,7 +1106,7 @@ def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_r
 
 
 def test_build_case_returns_flags_suffix_matching_selected_capabilities(compiled_pe):
-    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, _, _, _ = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=True,
         run_capa=False,
@@ -1119,7 +1119,7 @@ def test_build_case_returns_flags_suffix_matching_selected_capabilities(compiled
 
 
 def test_build_case_returns_empty_flags_suffix_when_nothing_selected(compiled_pe):
-    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, _, _, _ = build_case(
+    case, floss_raw, forced_verbose, ranked_strings_full, flags_suffix, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1132,7 +1132,7 @@ def test_build_case_returns_empty_flags_suffix_when_nothing_selected(compiled_pe
 
 
 def test_build_case_includes_python_stdlib_check_in_tools_regardless_of_flags(compiled_pe):
-    case, _, _, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1146,7 +1146,7 @@ def test_build_case_includes_python_stdlib_check_in_tools_regardless_of_flags(co
     assert case.static.tools["python"]["available"] is True
 
 
-def test_build_case_returns_eight_element_tuple_including_resolved_capabilities(compiled_pe):
+def test_build_case_returns_nine_element_tuple_including_resolved_capabilities(compiled_pe):
     result = build_case(
         compiled_pe,
         run_yara=True,
@@ -1156,13 +1156,13 @@ def test_build_case_returns_eight_element_tuple_including_resolved_capabilities(
         run_rank=False,
     )
 
-    assert len(result) == 8
+    assert len(result) == 9
     resolved_capabilities = result[5]
     assert resolved_capabilities == (True, False, True, False, False, False)
 
 
 def test_build_case_does_not_attempt_unpack_when_run_unpack_false(compiled_pe):
-    case, _, _, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1178,7 +1178,7 @@ def test_build_case_does_not_attempt_unpack_when_run_unpack_false(compiled_pe):
 def test_build_case_does_not_attempt_unpack_when_die_not_run(compiled_pe, monkeypatch):
     monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
 
-    case, _, _, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1196,7 +1196,7 @@ def test_build_case_does_not_attempt_unpack_when_die_finds_no_upx(compiled_pe, m
     monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
     monkeypatch.setattr("watson.cli.die_scan_file", lambda *a, **k: [])
 
-    case, _, _, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1218,7 +1218,7 @@ def test_build_case_populates_unpacking_result_when_upx_detected_and_unpack_succ
     )
     monkeypatch.setattr("watson.cli.upx_unpack.unpack_file", lambda file_path, output_path, **k: output_path.write_bytes(b"unpacked"))
 
-    case, _, _, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1250,7 +1250,7 @@ def test_build_case_records_failure_reason_when_unpack_fails(compiled_pe, monkey
 
     monkeypatch.setattr("watson.cli.upx_unpack.unpack_file", failing_unpack)
 
-    case, _, _, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1265,7 +1265,7 @@ def test_build_case_records_failure_reason_when_unpack_fails(compiled_pe, monkey
 
 
 def test_build_case_skips_pyinstaller_extraction_when_not_requested(compiled_pe):
-    case, _, _, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1281,7 +1281,7 @@ def test_build_case_skips_pyinstaller_extraction_when_not_requested(compiled_pe)
 
 
 def test_build_case_does_not_attempt_extraction_when_die_not_run(compiled_pe):
-    case, _, _, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1303,7 +1303,7 @@ def test_build_case_does_not_attempt_extraction_when_die_finds_no_pyinstaller(co
     monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
     monkeypatch.setattr("watson.cli.die_scan_file", lambda *a, **k: [])
 
-    case, _, _, _, _, _, _, _ = build_case(
+    case, _, _, _, _, _, _, _, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1328,7 +1328,7 @@ def test_build_case_populates_pyinstaller_extraction_when_detected_and_extractio
     fake_entries = [{"path": "main.pyc", "size": 10, "pyarmor_protected": False}]
     monkeypatch.setattr("watson.cli.pyinstaller_extract.extract_file", lambda *a, **k: fake_entries)
 
-    case, _, _, _, _, _, _, pyinstaller_output_dir = build_case(
+    case, _, _, _, _, _, _, pyinstaller_output_dir, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1362,7 +1362,7 @@ def test_build_case_records_extraction_failure_reason(compiled_pe, monkeypatch):
 
     monkeypatch.setattr("watson.cli.pyinstaller_extract.extract_file", failing_extract)
 
-    case, _, _, _, _, _, _, pyinstaller_output_dir = build_case(
+    case, _, _, _, _, _, _, pyinstaller_output_dir, _ = build_case(
         compiled_pe,
         run_yara=False,
         run_capa=False,
@@ -1375,6 +1375,165 @@ def test_build_case_records_extraction_failure_reason(compiled_pe, monkeypatch):
     assert case.static.pyinstaller_extraction.success is False
     assert case.static.pyinstaller_extraction.reason == "boom"
     assert pyinstaller_output_dir is None
+
+
+def test_build_case_skips_pyarmor_unpack_when_pyinstaller_extraction_not_attempted(compiled_pe):
+    (
+        case, _, _, _, _, _, _, _, pyarmor_output_dir,
+    ) = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=False,
+        run_rank=False,
+        run_extract_pyinstaller=False,
+    )
+
+    assert case.static.pyarmor_unpacking is None
+    assert pyarmor_output_dir is None
+
+
+def test_build_case_skips_pyarmor_unpack_when_extraction_found_nothing_protected(compiled_pe, monkeypatch):
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyinstxtractor", lambda offline: ({"available": True, "reason": None}, "pyinstxtractor-ng")
+    )
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "PyInstaller", "version": None, "string": None}]}],
+    )
+    fake_entries = [{"path": "python311.dll", "size": 20, "pyarmor_protected": False}]
+    monkeypatch.setattr("watson.cli.pyinstaller_extract.extract_file", lambda *a, **k: fake_entries)
+
+    (
+        case, _, _, _, _, _, _, _, pyarmor_output_dir,
+    ) = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=True,
+        run_rank=False,
+        run_extract_pyinstaller=True,
+    )
+
+    assert case.static.pyarmor_unpacking is None
+    assert "not attempted" in case.static.tools["pyarmor1shot"]["reason"]
+    assert pyarmor_output_dir is None
+
+
+def test_build_case_reports_pyarmor1shot_unavailable_reason_when_tool_missing(compiled_pe, monkeypatch):
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyinstxtractor", lambda offline: ({"available": True, "reason": None}, "pyinstxtractor-ng")
+    )
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "PyInstaller", "version": None, "string": None}]}],
+    )
+    fake_entries = [{"path": "main.pyc", "size": 10, "pyarmor_protected": True}]
+    monkeypatch.setattr("watson.cli.pyinstaller_extract.extract_file", lambda *a, **k: fake_entries)
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyarmor1shot",
+        lambda offline: ({"available": False, "reason": "pycryptodome python module not found"}, None),
+    )
+
+    (
+        case, _, _, _, _, _, _, _, pyarmor_output_dir,
+    ) = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=True,
+        run_rank=False,
+        run_extract_pyinstaller=True,
+    )
+
+    assert case.static.pyarmor_unpacking is None
+    assert case.static.tools["pyarmor1shot"] == {
+        "available": False, "reason": "pycryptodome python module not found",
+    }
+    assert pyarmor_output_dir is None
+
+
+def test_build_case_attempts_pyarmor_unpack_when_protected_entries_found(compiled_pe, monkeypatch):
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyinstxtractor", lambda offline: ({"available": True, "reason": None}, "pyinstxtractor-ng")
+    )
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "PyInstaller", "version": None, "string": None}]}],
+    )
+    fake_extraction_entries = [
+        {"path": "main.pyc", "size": 10, "pyarmor_protected": True},
+        {"path": "python311.dll", "size": 20, "pyarmor_protected": False},
+    ]
+    monkeypatch.setattr("watson.cli.pyinstaller_extract.extract_file", lambda *a, **k: fake_extraction_entries)
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyarmor1shot", lambda offline: ({"available": True, "reason": None}, "/opt/oneshot/shot.py")
+    )
+    fake_unpack_entries = [{"path": "main.pyc.1shot.py", "size": 128}]
+    monkeypatch.setattr("watson.cli.pyarmor_unpack.unpack_dir", lambda *a, **k: fake_unpack_entries)
+
+    (
+        case, _, _, _, _, _, _, pyinstaller_output_dir, pyarmor_output_dir,
+    ) = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=True,
+        run_rank=False,
+        run_extract_pyinstaller=True,
+    )
+
+    assert case.static.pyarmor_unpacking is not None
+    assert case.static.pyarmor_unpacking.success is True
+    assert case.static.pyarmor_unpacking.entries == fake_unpack_entries
+    assert case.static.tools["pyarmor1shot"]["available"] is True
+    assert pyarmor_output_dir is not None
+
+
+def test_build_case_records_pyarmor_unpack_failure_reason(compiled_pe, monkeypatch):
+    from watson.pyarmor_unpack import PyArmorUnpackError
+
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyinstxtractor", lambda offline: ({"available": True, "reason": None}, "pyinstxtractor-ng")
+    )
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [{"filetype": "PE64", "values": [{"type": "packer", "name": "PyInstaller", "version": None, "string": None}]}],
+    )
+    fake_extraction_entries = [{"path": "main.pyc", "size": 10, "pyarmor_protected": True}]
+    monkeypatch.setattr("watson.cli.pyinstaller_extract.extract_file", lambda *a, **k: fake_extraction_entries)
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyarmor1shot", lambda offline: ({"available": True, "reason": None}, "/opt/oneshot/shot.py")
+    )
+
+    def failing_unpack(*a, **k):
+        raise PyArmorUnpackError("boom")
+
+    monkeypatch.setattr("watson.cli.pyarmor_unpack.unpack_dir", failing_unpack)
+
+    (
+        case, _, _, _, _, _, _, _, pyarmor_output_dir,
+    ) = build_case(
+        compiled_pe,
+        run_yara=False,
+        run_capa=False,
+        run_floss=False,
+        run_die=True,
+        run_rank=False,
+        run_extract_pyinstaller=True,
+    )
+
+    assert case.static.pyarmor_unpacking.success is False
+    assert case.static.pyarmor_unpacking.reason == "boom"
+    assert pyarmor_output_dir is None
 
 
 def test_analyze_unpacks_and_saves_a_second_case_for_a_upx_packed_sample(compiled_pe, tmp_path, capsys, monkeypatch):
