@@ -192,7 +192,7 @@ echo "Installing watson (editable) and dev dependencies..."
 "$VENV_DIR/bin/pip" install -e ".[dev]"
 
 echo
-echo "watson installed. Running 'watson setup' to check/install optional analysis tools..."
+echo "$("$VENV_DIR/bin/watson" --version) installed. Running 'watson setup' to check/install optional analysis tools..."
 echo
 "$VENV_DIR/bin/watson" setup
 
