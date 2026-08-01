@@ -730,6 +730,46 @@ def test_case_round_trips_failed_pyinstaller_extraction():
     assert restored.static.pyinstaller_extraction == case.static.pyinstaller_extraction
 
 
+def test_case_round_trips_pyarmor_unpacking():
+    from watson.case import PyArmorUnpackResult
+
+    case = _sample_case()
+    case.static.pyarmor_unpacking = PyArmorUnpackResult(
+        tool="pyarmor-1shot",
+        success=True,
+        output_dir="/tmp/out_pyarmor_unpacked",
+        entries=[
+            {"path": "main.pyc.1shot.py", "size": 512},
+            {"path": "main.pyc.1shot.seq", "size": 256},
+        ],
+    )
+
+    restored = Case.from_dict(case.to_dict())
+
+    assert restored.static.pyarmor_unpacking == case.static.pyarmor_unpacking
+
+
+def test_case_round_trips_absent_pyarmor_unpacking():
+    case = _sample_case()
+
+    restored = Case.from_dict(case.to_dict())
+
+    assert restored.static.pyarmor_unpacking is None
+
+
+def test_case_round_trips_failed_pyarmor_unpacking():
+    from watson.case import PyArmorUnpackResult
+
+    case = _sample_case()
+    case.static.pyarmor_unpacking = PyArmorUnpackResult(
+        tool="pyarmor-1shot", success=False, reason="pyarmor-1shot produced no output files"
+    )
+
+    restored = Case.from_dict(case.to_dict())
+
+    assert restored.static.pyarmor_unpacking == case.static.pyarmor_unpacking
+
+
 def test_static_section_go_build_info_defaults_to_empty_dict():
     pe_metadata = PEMetadata(
         machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
