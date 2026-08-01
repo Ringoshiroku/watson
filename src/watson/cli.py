@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 from datetime import datetime
+from importlib.metadata import PackageNotFoundError, version as _package_version
 from pathlib import Path
 
 from watson.case import (
@@ -702,8 +703,18 @@ def build_case(
     )
 
 
+def _watson_version() -> str:
+    try:
+        return _package_version("watson")
+    except PackageNotFoundError:
+        return "unknown"
+
+
 def main(argv: list | None = None) -> int:
     parser = argparse.ArgumentParser(prog="watson")
+    parser.add_argument(
+        "-V", "--version", action="version", version=f"watson {_watson_version()}"
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     analyze_parser = subparsers.add_parser("analyze", help="Analyze a single PE or ELF file")

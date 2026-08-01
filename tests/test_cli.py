@@ -21,6 +21,15 @@ def _isolate_rule_caches(monkeypatch, tmp_path):
     monkeypatch.setattr("watson.cli.GORESYM_CACHE", tmp_path / "unused-goresym-cache")
 
 
+def test_main_version_flag_prints_version_and_exits(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--version"])
+
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip().startswith("watson ")
+
+
 def test_analyze_writes_case_and_prints_report(compiled_pe, tmp_path, capsys, monkeypatch):
     _isolate_rule_caches(monkeypatch, tmp_path)
     out_dir = tmp_path / "cases"
