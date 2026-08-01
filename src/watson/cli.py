@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 from datetime import datetime
+from importlib.metadata import PackageNotFoundError, version as _package_version
 from pathlib import Path
 
 from watson.case import (
@@ -338,6 +339,7 @@ def _resolve_capability_selection(
     run_yara: bool | None,
     run_capa: bool | None,
     run_rank: bool | None,
+    run_unpack: bool | None,
     run_goresym: bool | None,
     run_extract_pyinstaller: bool | None,
     subject: str,
@@ -358,6 +360,7 @@ def _resolve_capability_selection(
         and run_yara is None
         and run_capa is None
         and run_rank is None
+        and run_unpack is None
         and run_goresym is None
         and run_extract_pyinstaller is None
         and tool_discovery.is_interactive()
@@ -369,6 +372,7 @@ def _resolve_capability_selection(
         run_floss = "f" in selection.keys
         run_die = "d" in selection.keys
         run_rank = "r" in selection.keys
+        run_unpack = "u" in selection.keys
         run_goresym = "g" in selection.keys
         run_extract_pyinstaller = "p" in selection.keys
         forced_verbose = selection.via_all_shorthand
@@ -388,6 +392,11 @@ def _resolve_capability_selection(
             f"rank extracted strings by relevance on {subject} using StringSifter?"
         )
 
+    if run_unpack is None:
+        run_unpack = confirm(
+            f"auto-unpack {subject} with UPX and re-analyze the unpacked binary if UPX packing is detected?"
+        )
+
     if run_goresym is None:
         run_goresym = confirm(
             f"recover Go build info / dependencies from {subject} using GoReSym (Go binaries only)?"
@@ -399,7 +408,7 @@ def _resolve_capability_selection(
         )
 
     return (
-        attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym, run_extract_pyinstaller,
+        attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_unpack, run_goresym, run_extract_pyinstaller,
         forced_verbose,
     )
 
@@ -469,11 +478,11 @@ def build_case(
     )
 
     (
-        attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym, run_extract_pyinstaller,
+        attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_unpack, run_goresym, run_extract_pyinstaller,
         forced_verbose,
     ) = _resolve_capability_selection(
         rules_dir, capa_rules_dir, run_floss, run_die, run_yara, run_capa,
-        run_rank, run_goresym, run_extract_pyinstaller, file_path.name,
+        run_rank, run_unpack, run_goresym, run_extract_pyinstaller, file_path.name,
     )
 
     tools = {}
@@ -694,8 +703,18 @@ def build_case(
     )
 
 
+def _watson_version() -> str:
+    try:
+        return _package_version("watson")
+    except PackageNotFoundError:
+        return "unknown"
+
+
 def main(argv: list | None = None) -> int:
     parser = argparse.ArgumentParser(prog="watson")
+    parser.add_argument(
+        "-V", "--version", action="version", version=f"watson {_watson_version()}"
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     analyze_parser = subparsers.add_parser("analyze", help="Analyze a single PE or ELF file")
@@ -1032,11 +1051,11 @@ def _run_batch(
     files = sorted(path for path in dir_path.rglob("*") if path.is_file())
 
     (
-        attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym, run_extract_pyinstaller,
+        attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_unpack, run_goresym, run_extract_pyinstaller,
         forced_verbose,
     ) = _resolve_capability_selection(
         rules_dir, capa_rules_dir, run_floss, run_die, None, None, run_rank,
-        run_goresym, run_extract_pyinstaller, "this batch",
+        run_unpack, run_goresym, run_extract_pyinstaller, "this batch",
     )
     effective_verbose = verbose or forced_verbose
     flags_suffix = _capability_flags_suffix(
