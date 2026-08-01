@@ -240,6 +240,14 @@ what you want you never have to go through a prompt again:
   https://github.com/horsicq/Detect-It-Easy). `watson analyze -d` itself
   only checks whether `diec` is already available, it never fetches or
   installs. Omit to be asked interactively.
+- `-u`, `--unpack`, if Detect It Easy identifies UPX packing, unpack the
+  sample with UPX and automatically re-analyze the unpacked binary as a
+  second case (needs `-d`/`--diec` to have run and identified UPX). Unlike
+  GoReSym/pyinstxtractor-ng, `watson setup` only auto-fetches `upx` on
+  Windows (the official portable build, cached under
+  `~/.watson/tools/upx/`); on Linux, install it yourself (`sudo apt install
+  upx-ucl` on Debian/Kali/Ubuntu) and it's picked up from PATH. Omit to be
+  asked interactively.
 - `-g`, `--goresym`, run GoReSym to recover Go build info (module path,
   dependencies with exact versions, and the sample's own function names)
   from Go binaries. Has no effect on non-Go samples. Unlike YARA/capa/FLOSS,
