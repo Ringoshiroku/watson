@@ -373,6 +373,46 @@ def test_capability_options_includes_unpack_letter():
     assert keys == ["y", "c", "f", "d", "r", "u", "g", "p"]
 
 
+def test_resolve_capability_selection_extracts_run_unpack_from_mega_prompt(monkeypatch):
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "u")
+
+    result = watson.cli._resolve_capability_selection(
+        rules_dir=None, capa_rules_dir=None, run_floss=None, run_die=None,
+        run_yara=None, run_capa=None, run_rank=None, run_unpack=None, run_goresym=None,
+        run_extract_pyinstaller=None, subject="test.exe",
+    )
+
+    *_, run_unpack, run_goresym, run_extract_pyinstaller, forced_verbose = result
+    assert run_unpack is True
+
+
+def test_analyze_selecting_unpack_via_mega_prompt_attempts_unpack(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "u")
+
+    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir)])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "unpack not requested" not in captured.out
+
+
+def test_analyze_with_explicit_unpack_flag_alone_never_shows_mega_prompt(compiled_pe, tmp_path, capsys, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "n")
+
+    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir), "--unpack"])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "which analyses do you want to run?" not in captured.out
+
+
 def test_resolve_upx_reports_unavailable_with_install_hint_when_missing(monkeypatch):
     from watson.cli import _resolve_upx
 
@@ -513,6 +553,7 @@ def test_analyze_with_explicit_floss_flag_never_prompts(compiled_pe, tmp_path, c
             "--floss",
             "--diec",
             "--rank-strings",
+            "--unpack",
             "--goresym",
             "--extract-pyinstaller",
         ]
@@ -974,6 +1015,7 @@ def test_build_case_respects_explicit_run_yara_and_run_capa_false(compiled_pe, m
         run_floss=False,
         run_die=False,
         run_rank=False,
+        run_unpack=False,
         run_goresym=False,
         run_extract_pyinstaller=False,
     )
@@ -1042,7 +1084,7 @@ def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_r
     compiled_pe, monkeypatch
 ):
     monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
-    answers = iter(["n", "n", "n", "n", "n"])
+    answers = iter(["n", "n", "n", "n", "n", "n"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
 
     case, floss_raw, forced_verbose, ranked_strings_full, _, _, _, _ = build_case(
@@ -1604,7 +1646,7 @@ def test_analyze_directory_asks_floss_and_die_confirmation_once_each(
     )
 
     assert exit_code == 0
-    assert call_count["n"] == 5
+    assert call_count["n"] == 6
 
 
 def test_analyze_directory_skips_non_pe_files_and_continues(compiled_pe, tmp_path, capsys, monkeypatch):
@@ -1898,12 +1940,25 @@ def test_resolve_capability_selection_returns_run_goresym_flag_unchanged_when_ex
 
     result = watson.cli._resolve_capability_selection(
         rules_dir=None, capa_rules_dir=None, run_floss=False, run_die=False,
-        run_yara=False, run_capa=False, run_rank=False, run_goresym=True,
+        run_yara=False, run_capa=False, run_rank=False, run_unpack=False, run_goresym=True,
         run_extract_pyinstaller=False, subject="test.exe",
     )
 
     *_, run_goresym, run_extract_pyinstaller, forced_verbose = result
     assert run_goresym is True
+
+
+def test_resolve_capability_selection_returns_run_unpack_flag_unchanged_when_explicit(monkeypatch):
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: False)
+
+    result = watson.cli._resolve_capability_selection(
+        rules_dir=None, capa_rules_dir=None, run_floss=False, run_die=False,
+        run_yara=False, run_capa=False, run_rank=False, run_unpack=True, run_goresym=False,
+        run_extract_pyinstaller=False, subject="test.exe",
+    )
+
+    *_, run_unpack, run_goresym, run_extract_pyinstaller, forced_verbose = result
+    assert run_unpack is True
 
 
 def test_build_case_runs_goresym_and_populates_go_build_info(compiled_pe, monkeypatch, tmp_path):
