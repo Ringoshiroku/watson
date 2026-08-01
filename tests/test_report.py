@@ -300,6 +300,70 @@ def test_build_text_report_truncates_long_pyinstaller_extraction_manifest():
     assert "+10 more" in report
 
 
+def test_build_text_report_renders_pyarmor_unpacking_section_on_success():
+    from watson.case import PyArmorUnpackResult
+
+    case = _sample_case()
+    case.static.pyarmor_unpacking = PyArmorUnpackResult(
+        tool="pyarmor-1shot",
+        success=True,
+        output_dir="/out/sample_pyarmor_unpacked",
+        entries=[
+            {"path": "main.pyc.1shot.py", "size": 512},
+            {"path": "main.pyc.1shot.seq", "size": 256},
+        ],
+    )
+
+    report = build_text_report(case)
+
+    assert "PyArmor Unpack" in report
+    assert "tool: pyarmor-1shot" in report
+    assert "result: succeeded" in report
+    assert "output: /out/sample_pyarmor_unpacked" in report
+    assert "entries: 2" in report
+    assert "main.pyc.1shot.py" in report
+
+
+def test_build_text_report_renders_pyarmor_unpacking_section_on_failure():
+    from watson.case import PyArmorUnpackResult
+
+    case = _sample_case()
+    case.static.pyarmor_unpacking = PyArmorUnpackResult(
+        tool="pyarmor-1shot", success=False, reason="pyarmor-1shot produced no output files"
+    )
+
+    report = build_text_report(case)
+
+    assert "PyArmor Unpack" in report
+    assert "result: failed" in report
+    assert "reason: pyarmor-1shot produced no output files" in report
+
+
+def test_build_text_report_omits_pyarmor_unpacking_section_when_absent():
+    case = _sample_case()
+
+    report = build_text_report(case)
+
+    assert "PyArmor Unpack" not in report
+
+
+def test_build_text_report_truncates_long_pyarmor_unpacking_manifest():
+    from watson.case import PyArmorUnpackResult
+
+    case = _sample_case()
+    entries = [{"path": f"file{i}.1shot.py", "size": 10} for i in range(60)]
+    case.static.pyarmor_unpacking = PyArmorUnpackResult(
+        tool="pyarmor-1shot", success=True, output_dir="/out", entries=entries
+    )
+
+    report = build_text_report(case)
+
+    assert "file0.1shot.py" in report
+    assert "file49.1shot.py" in report
+    assert "file50.1shot.py" not in report
+    assert "+10 more" in report
+
+
 def _sample_case_with_yara_match_detail() -> Case:
     identity = Identity(
         sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"

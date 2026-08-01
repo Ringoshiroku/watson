@@ -252,6 +252,28 @@ def _render_pyinstaller_extraction_lines(extraction) -> list:
     return lines
 
 
+_MAX_PYARMOR_UNPACKING_ENTRIES_DISPLAY = 50
+
+
+def _render_pyarmor_unpacking_lines(unpacking) -> list:
+    lines = ["PyArmor Unpack", "-" * 14]
+    lines.append(f"  tool: {unpacking.tool}")
+    lines.append(f"  result: {'succeeded' if unpacking.success else 'failed'}")
+    if unpacking.reason:
+        lines.append(f"  reason: {unpacking.reason}")
+    if unpacking.output_dir:
+        lines.append(f"  output: {unpacking.output_dir}")
+    if unpacking.entries:
+        lines.append(f"  entries: {len(unpacking.entries)}")
+        shown = unpacking.entries[:_MAX_PYARMOR_UNPACKING_ENTRIES_DISPLAY]
+        for entry in shown:
+            lines.append(f"    {entry['path']} ({entry['size']} bytes)")
+        remainder = len(unpacking.entries) - len(shown)
+        if remainder > 0:
+            lines.append(f"    ... (+{remainder} more)")
+    return lines
+
+
 # a large Go binary can recover hundreds of function names per package; the
 # full list is kept in the underlying data (the JSON report and the
 # standalone *_goresym.json sidecar), this only bounds what the plain-text
@@ -366,6 +388,10 @@ def build_text_report(case: Case, verbose: bool = False) -> str:
     if case.static.pyinstaller_extraction is not None:
         lines.append("")
         lines.extend(_render_pyinstaller_extraction_lines(case.static.pyinstaller_extraction))
+
+    if case.static.pyarmor_unpacking is not None:
+        lines.append("")
+        lines.extend(_render_pyarmor_unpacking_lines(case.static.pyarmor_unpacking))
 
     lines.append("")
     lines.append("YARA Matches")
