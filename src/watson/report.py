@@ -6,6 +6,7 @@ from watson.case import Case
 def build_json_report(case: Case) -> dict:
     report = case.to_dict()
     report["summary"] = _build_summary(case)
+    report["overview"] = _build_overview(case.static.capabilities)
     return report
 
 
@@ -149,6 +150,27 @@ def _group_capabilities_by_tactic(capabilities: list) -> dict:
         for tactic in _capability_tactics(capability):
             grouped.setdefault(tactic, []).append(capability)
     return grouped
+
+
+def _build_overview(capabilities: list) -> dict:
+    grouped = _group_capabilities_by_tactic(capabilities)
+    return {
+        tactic: [capability["rule"] for capability in grouped[tactic]]
+        for tactic in sorted(grouped, key=lambda t: (t == "Ungrouped", t))
+    }
+
+
+def _render_overview_lines(capabilities: list) -> list:
+    lines = ["Overview", "-" * 8]
+    if not capabilities:
+        lines.append("  none")
+        return lines
+    grouped = _group_capabilities_by_tactic(capabilities)
+    for tactic in sorted(grouped, key=lambda t: (t == "Ungrouped", t)):
+        lines.append(f"{tactic}:")
+        for capability in grouped[tactic]:
+            lines.append(f"  - {capability['rule']}")
+    return lines
 
 
 def _group_strings_by_reason(findings: list) -> dict:
@@ -324,6 +346,8 @@ def build_text_report(case: Case, verbose: bool = False) -> str:
     lines.append("=" * 30)
     lines.append("")
     lines.extend(_render_classification_lines(case.static.classification))
+    lines.append("")
+    lines.extend(_render_overview_lines(case.static.capabilities))
     lines.append("")
     lines.append("Sample")
     lines.append("-" * 6)

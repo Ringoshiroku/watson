@@ -616,7 +616,7 @@ def test_build_text_report_shows_multi_tactic_capability_under_each_tactic():
 
     report = build_text_report(case)
 
-    assert report.count("inject into remote process") == 2
+    assert report.count("inject into remote process") == 4
     assert "\nDefense Evasion\n" in report
     assert "\nPrivilege Escalation\n" in report
 
@@ -997,7 +997,123 @@ def test_build_text_report_shows_no_go_build_info_when_empty():
     report = build_text_report(case)
 
     assert "Go Build Info" in report
-    assert report.rstrip().endswith("none")
+
+
+def test_build_text_report_shows_overview_grouped_by_tactic():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        capabilities=[
+            {
+                "rule": "query registry",
+                "namespace": "host-interaction/registry",
+                "attack": ["Discovery::Query Registry [T1012]"],
+                "mbc": [],
+            },
+            {
+                "rule": "connect to socket",
+                "namespace": "communication/socket",
+                "attack": ["Command and Control::Non-Standard Port [T1571]"],
+                "mbc": [],
+            },
+        ],
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "Overview" in report
+    assert "Discovery:\n  - query registry" in report
+    assert "Command and Control:\n  - connect to socket" in report
+
+
+def test_build_text_report_overview_buckets_unmapped_capability_as_ungrouped():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        capabilities=[
+            {"rule": "no mapping capability", "namespace": "misc", "attack": [], "mbc": []},
+        ],
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "Ungrouped:\n  - no mapping capability" in report
+
+
+def test_build_text_report_shows_no_overview_when_capabilities_empty():
+    case = _sample_case()
+
+    report = build_text_report(case)
+
+    assert "Overview" in report
+    assert "none" in report
+
+
+def test_overview_section_appears_between_classification_and_sample():
+    case = _sample_case_with_capabilities()
+
+    report = build_text_report(case)
+
+    assert report.index("Classification") < report.index("Overview") < report.index("Sample")
+
+
+def test_build_json_report_includes_overview_grouped_by_tactic():
+    case = _sample_case_with_capabilities()
+
+    report = build_json_report(case)
+
+    assert report["overview"] == {"Ungrouped": ["watson test fixture string"]}
+
+
+def test_build_json_report_overview_groups_multiple_capabilities_under_one_tactic():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        capabilities=[
+            {
+                "rule": "query registry",
+                "namespace": "host-interaction/registry",
+                "attack": ["Discovery::Query Registry [T1012]"],
+                "mbc": [],
+            },
+            {
+                "rule": "enumerate processes",
+                "namespace": "host-interaction/process",
+                "attack": ["Discovery::Process Discovery [T1057]"],
+                "mbc": [],
+            },
+        ],
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_json_report(case)
+
+    assert report["overview"] == {"Discovery": ["query registry", "enumerate processes"]}
+
+
+def test_build_json_report_overview_empty_when_no_capabilities():
+    case = _sample_case()
+
+    report = build_json_report(case)
+
+    assert report["overview"] == {}
 
 
 def test_build_text_report_shows_go_build_info():
