@@ -7,6 +7,8 @@ import pytest
 
 from watson.cli import build_case, main
 import watson.cli
+import watson.tool_discovery
+import watson.pe_metadata
 
 
 def _isolate_rule_caches(monkeypatch, tmp_path):
@@ -1087,6 +1089,73 @@ def test_build_case_passes_is_unsigned_false_for_elf(compiled_elf, monkeypatch):
     )
 
     assert captured_kwargs["is_unsigned"] is False
+
+
+def test_build_case_passes_signature_invalid_false_when_signify_unavailable(compiled_pe, monkeypatch):
+    monkeypatch.setattr(
+        "watson.cli.find_module",
+        lambda *a, **k: watson.tool_discovery.ToolStatus(
+            name="signify", available=False, path=None, reason="signify not installed"
+        ),
+    )
+    captured_kwargs = {}
+    real_classify = watson.cli.classify
+
+    def recording_classify(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return real_classify(*args, **kwargs)
+
+    monkeypatch.setattr("watson.cli.classify", recording_classify)
+
+    case, *_ = build_case(
+        compiled_pe, run_yara=False, run_capa=False, run_floss=False, run_die=False, run_rank=False
+    )
+
+    assert captured_kwargs["signature_invalid"] is False
+    assert case.static.signature_verification is None
+    assert case.static.tools["signify"]["available"] is False
+
+
+def test_build_case_skips_verification_when_pe_unsigned(compiled_pe, monkeypatch):
+    # compiled_pe is a freshly compiled, never-signed fixture, so
+    # has_digital_signature is False and verify_signature must not be called
+    # even if signify itself is available.
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("verify_signature should not be called for an unsigned PE")
+
+    monkeypatch.setattr("watson.cli.verify_signature", fail_if_called)
+
+    case, *_ = build_case(
+        compiled_pe, run_yara=False, run_capa=False, run_floss=False, run_die=False, run_rank=False
+    )
+
+    assert case.static.signature_verification is None
+
+
+def test_build_case_records_authenticode_scan_error_as_unavailable(compiled_pe, monkeypatch):
+    from watson.authenticode_scan import AuthenticodeScanError
+
+    monkeypatch.setattr("watson.cli.find_module", lambda *a, **k: watson.tool_discovery.ToolStatus(
+        name="signify", available=True, path="signify", reason=None
+    ))
+    monkeypatch.setattr("watson.pe_metadata.extract_pe_metadata", watson.pe_metadata.extract_pe_metadata)
+    monkeypatch.setattr(
+        watson.cli, "extract_pe_metadata",
+        lambda path: {**watson.pe_metadata.extract_pe_metadata(path), "has_digital_signature": True},
+    )
+
+    def raise_scan_error(*args, **kwargs):
+        raise AuthenticodeScanError("boom")
+
+    monkeypatch.setattr("watson.cli.verify_signature", raise_scan_error)
+
+    case, *_ = build_case(
+        compiled_pe, run_yara=False, run_capa=False, run_floss=False, run_die=False, run_rank=False
+    )
+
+    assert case.static.signature_verification is None
+    assert case.static.tools["signify"]["available"] is False
+    assert "signature verification failed" in case.static.tools["signify"]["reason"]
 
 
 def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_rank_once_each(

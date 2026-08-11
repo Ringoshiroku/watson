@@ -11,9 +11,10 @@ from importlib.metadata import PackageNotFoundError, version as _package_version
 from pathlib import Path
 
 from watson.case import (
-    Case, ELFMetadata, Identity, PEMetadata, PyArmorUnpackResult, PyInstallerExtractionResult, StaticSection,
-    UnpackingResult,
+    Case, ELFMetadata, Identity, PEMetadata, PyArmorUnpackResult, PyInstallerExtractionResult,
+    SignatureVerification, StaticSection, UnpackingResult,
 )
+from watson.authenticode_scan import AuthenticodeScanError, verify_signature
 from watson.capa_scan import CapaScanError, scan_file as capa_scan_file
 from watson.die_scan import DieScanError, identify_packers, scan_file as die_scan_file
 from watson import upx_unpack
@@ -190,6 +191,11 @@ def _resolve_capa(
 def _resolve_floss(offline: bool) -> dict:
     floss_status = find_binary("floss", pip_package="flare-floss", offline=offline)
     return {"available": floss_status.available, "reason": floss_status.reason}
+
+
+def _resolve_signify(offline: bool) -> dict:
+    signify_status = find_module("signify", "signify", pip_package="signify", offline=offline)
+    return {"available": signify_status.available, "reason": signify_status.reason}
 
 
 def _resolve_die(offline: bool) -> tuple[dict, str | None]:
@@ -554,6 +560,29 @@ def build_case(
 
     tools = {}
     tools["python"] = _resolve_python_stdlib()
+    tools["signify"] = _resolve_signify(offline=True)
+
+    signature_verification = None
+    if pe_metadata is not None and pe_metadata.has_digital_signature and tools["signify"]["available"]:
+        try:
+            with progress.stage("Authenticode signature verification"):
+                verify_result = verify_signature(file_path)
+            signature_verification = SignatureVerification(
+                tool="signify",
+                status=verify_result["status"],
+                verification_result=verify_result["verification_result"],
+                signer_subject=verify_result["signer_subject"],
+                signer_issuer=verify_result["signer_issuer"],
+                valid_from=verify_result["valid_from"],
+                valid_to=verify_result["valid_to"],
+                error=verify_result["error"],
+            )
+        except AuthenticodeScanError as exc:
+            tools["signify"] = {"available": False, "reason": f"signature verification failed: {exc}"}
+
+    signature_invalid = signature_verification is not None and signature_verification.status != "valid"
+    signature_verification_result = signature_verification.verification_result if signature_verification else ""
+
     yara_matches = []
 
     if attempt_yara:
@@ -775,6 +804,8 @@ def build_case(
         file_format,
         is_unsigned=is_unsigned,
         die_packer_names=identify_packers(die_detections),
+        signature_invalid=signature_invalid,
+        signature_verification_result=signature_verification_result,
     )
 
     static = StaticSection(
@@ -791,6 +822,7 @@ def build_case(
         go_build_info=go_build_info,
         pyinstaller_extraction=pyinstaller_extraction,
         pyarmor_unpacking=pyarmor_unpacking,
+        signature_verification=signature_verification,
     )
     resolved_capabilities = (attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym)
     flags_suffix = _capability_flags_suffix(
