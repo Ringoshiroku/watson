@@ -997,6 +997,7 @@ def test_build_text_report_shows_no_go_build_info_when_empty():
     report = build_text_report(case)
 
     assert "Go Build Info" in report
+    assert report.rstrip().endswith("none")
 
 
 def test_build_text_report_shows_overview_grouped_by_tactic():
