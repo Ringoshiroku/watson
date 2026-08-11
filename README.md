@@ -345,6 +345,11 @@ no ATT&CK mapping land in an `Ungrouped` bucket at the end rather than
 being dropped. Flagged strings are grouped by reason (ip, url,
 registry_key, windows_path, email) the same way.
 
+An Overview section sits between Classification and Sample in the text
+report, and under an `overview` key (a sibling of `summary`) in the case
+JSON. It's a high-level grouping of the same matched capa capabilities by
+ATT&CK tactic, deterministic and capa-only, no LLM involved.
+
 Report layout takes structural inspiration from capa's own tactic-grouped
 terminal renderer (https://github.com/mandiant/capa), PEStudio's
 indicator-first summaries (https://pestudiodownload.com/), and

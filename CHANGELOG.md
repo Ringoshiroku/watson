@@ -14,6 +14,9 @@ correlation).
   with `pyarmor-1shot` and records a manifest in the report. No flag of its
   own; `watson setup` fetches the tool on Linux x86_64, Windows x86_64, and
   macOS arm64.
+- A deterministic Overview section: matched capa capabilities grouped by
+  ATT&CK tactic, at the top of the text report and under a new `overview`
+  key in the case JSON.
 
 ### Fixed
 - `-u`/`--unpack` selected from the interactive "which analyses do you
