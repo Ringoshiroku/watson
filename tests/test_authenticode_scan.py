@@ -81,3 +81,19 @@ def test_verify_signature_invalid_reports_status_and_error(monkeypatch, tmp_path
     assert result["status"] == "invalid"
     assert result["verification_result"] == "CERTIFICATE_ERROR"
     assert result["error"] == "untrusted root"
+
+
+def test_verify_signature_self_signed_pe_is_invalid(self_signed_pe):
+    result = verify_signature(self_signed_pe)
+
+    assert result["status"] == "invalid"
+    assert result["verification_result"] != "OK"
+    assert result["signer_subject"] is not None
+    assert "Watson Test Signer" in result["signer_subject"]
+
+
+def test_verify_signature_tampered_pe_is_invalid(tampered_signed_pe):
+    result = verify_signature(tampered_signed_pe)
+
+    assert result["status"] == "invalid"
+    assert result["verification_result"] != "OK"
