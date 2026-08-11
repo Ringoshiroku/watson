@@ -165,11 +165,10 @@ def _render_overview_lines(capabilities: list) -> list:
     if not capabilities:
         lines.append("  none")
         return lines
-    grouped = _group_capabilities_by_tactic(capabilities)
-    for tactic in sorted(grouped, key=lambda t: (t == "Ungrouped", t)):
+    for tactic, rules in _build_overview(capabilities).items():
         lines.append(f"{tactic}:")
-        for capability in grouped[tactic]:
-            lines.append(f"  - {capability['rule']}")
+        for rule in rules:
+            lines.append(f"  - {rule}")
     return lines
 
 

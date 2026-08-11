@@ -1058,8 +1058,7 @@ def test_build_text_report_shows_no_overview_when_capabilities_empty():
 
     report = build_text_report(case)
 
-    assert "Overview" in report
-    assert "none" in report
+    assert "Overview\n--------\n  none" in report
 
 
 def test_overview_section_appears_between_classification_and_sample():
