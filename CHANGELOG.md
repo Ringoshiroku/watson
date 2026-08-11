@@ -6,7 +6,7 @@ capability, a patch bump is a fix or docs-only change, and a major bump is
 reserved for completing a whole phase (static engine, dynamic engine,
 correlation).
 
-## [Unreleased]
+## [0.7.0] - 2026-08-11
 
 ### Added
 - Automatic PyArmor unpacking: when `-p`/`--extract-pyinstaller` flags any
