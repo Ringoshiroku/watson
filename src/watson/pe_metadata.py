@@ -22,6 +22,7 @@ _MACHINE_NAMES = {
 }
 
 _PACKED_ENTROPY_THRESHOLD = 7.2
+_MAX_MANIFEST_SIZE = 65536  # a real application manifest is a few KB; generous headroom
 
 
 def _machine_name(code: int) -> str:
@@ -71,9 +72,12 @@ def _extract_requested_execution_level(pe: "pefile.PE") -> Optional[str]:
             if entry.name is not None or entry.struct.Id != manifest_type_id:
                 continue
             leaf = entry.directory.entries[0].directory.entries[0]
-            data = pe.get_memory_mapped_image()[
-                leaf.data.struct.OffsetToData : leaf.data.struct.OffsetToData + leaf.data.struct.Size
-            ]
+            size = leaf.data.struct.Size
+            if size <= 0 or size > _MAX_MANIFEST_SIZE:
+                return None
+            data = pe.get_data(leaf.data.struct.OffsetToData, size)
+            if b"<!DOCTYPE" in data or b"<!ENTITY" in data:
+                return None
             root = ET.fromstring(data.decode("utf-8-sig"))
             for elem in root.iter():
                 if elem.tag.endswith("requestedExecutionLevel"):
