@@ -6,6 +6,15 @@ capability, a patch bump is a fix or docs-only change, and a major bump is
 reserved for completing a whole phase (static engine, dynamic engine,
 correlation).
 
+## [0.10.0] - 2026-08-12
+
+### Added
+- Classification signal for a Go binary with stripped build info: when
+  GoReSym confirms a Go binary (via `pclntab`) but recovers no module
+  path or dependency metadata, the reasoning list now notes this,
+  consistent with build info stripped or removed (e.g. by an obfuscator
+  such as Gobfuscator). Informational only, doesn't affect the risk tier.
+
 ## [0.9.0] - 2026-08-12
 
 ### Added

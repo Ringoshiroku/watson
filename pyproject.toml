@@ -1,6 +1,6 @@
 [project]
 name = "watson"
-version = "0.9.0"
+version = "0.10.0"
 description = "Offline-first static & dynamic malware triage orchestrator"
 requires-python = ">=3.10"
 dependencies = [
