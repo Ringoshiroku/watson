@@ -373,7 +373,11 @@ every other finding.
 A likely-packed reading always raises the risk tier by one step; once a
 sample additionally has a non-`unclassified` verdict, an unsigned reading
 (PE only) raises it by one more, and the two stack independently (still
-capped at `high`). Each applied bump is called out in the reasoning list.
+capped at `high`). A signed PE whose signature fails Authenticode
+verification (untrusted chain, tampered digest, malformed signature)
+raises risk the same one tier an unsigned sample does, they represent
+the same thing for risk purposes: the publisher-identity signal for this
+sample can't be trusted. Each applied bump is called out in the reasoning list.
 
 The detection name isn't a new algorithm, it's a compact label built
 from the same verdict and evidence already computed: verdict, a `Win32`/
@@ -450,12 +454,16 @@ files in the same run), with `watson setup` handling interactive
 fetch/install for every optional rule set or tool.
 
 Known limitations in what's built so far:
-- Digital signature check is presence-only, not validity, signer, or
-  trust chain. For ELF, this only detects the Linux kernel module
-  signing facility's trailer (relevant to `.ko` files); regular userspace
-  ELF binaries are essentially never signed this way, since distros sign
-  packages, not individual binaries, so a `False` reading there is
-  expected, not a gap.
+- Digital signature validity (signer identity, certificate trust,
+  tampered-digest detection) is checked for PE via `signify`, when it's
+  installed and the sample has a signature at all; see "Classification"
+  below for how a failed verification affects risk. For ELF, this only
+  detects the Linux kernel module signing facility's trailer (relevant to
+  `.ko` files); regular userspace ELF binaries are essentially never
+  signed this way, since distros sign packages, not individual binaries,
+  so a `False` reading there is expected, not a gap. Revocation/OCSP
+  checking is out of scope, that needs network access and contradicts
+  offline-first.
 - No imphash equivalent for ELF samples (`Identity.imphash` is always
   `None` for them); the community-standard analog, telfhash, isn't
   implemented yet.
