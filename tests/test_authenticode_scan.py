@@ -97,3 +97,38 @@ def test_verify_signature_tampered_pe_is_invalid(tampered_signed_pe):
 
     assert result["status"] == "invalid"
     assert result["verification_result"] != "OK"
+
+
+class _FakeCertificateMalformed:
+    @property
+    def subject(self):
+        raise ValueError("malformed ASN.1 distinguished name")
+
+    issuer = "CN=Watson Test Root"
+    valid_from = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+    valid_to = datetime.datetime(2027, 1, 1, tzinfo=datetime.timezone.utc)
+
+
+class _FakeCertificatesMalformed:
+    def find_certificates(self, issuer=None, serial_number=None):
+        return [_FakeCertificateMalformed()]
+
+
+class _FakeSignatureMalformed:
+    signer_info = _FakeSignerInfo()
+    certificates = _FakeCertificatesMalformed()
+
+
+class _FakeAuthenticodeFileMalformedCert(_FakeAuthenticodeFile):
+    signatures = [_FakeSignatureMalformed()]
+
+
+def test_verify_signature_wraps_malformed_certificate_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "signify.authenticode.AuthenticodeFile", _FakeAuthenticodeFileMalformedCert
+    )
+    fake_file = tmp_path / "fake.exe"
+    fake_file.write_bytes(b"not a real PE, the parser is mocked")
+
+    with pytest.raises(AuthenticodeScanError):
+        verify_signature(fake_file)

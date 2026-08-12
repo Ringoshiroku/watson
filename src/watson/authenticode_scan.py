@@ -43,6 +43,8 @@ def verify_signature(file_path: Path) -> dict:
         raise AuthenticodeScanError(f"could not open {file_path}: {os_exc}") from os_exc
     except ParseError as parse_exc:
         raise AuthenticodeScanError(f"could not parse signature in {file_path}: {parse_exc}") from parse_exc
+    except Exception as exc:
+        raise AuthenticodeScanError(f"could not verify signature in {file_path}: {exc}") from exc
 
     status = "valid" if result == AuthenticodeVerificationResult.OK else "invalid"
     return {
