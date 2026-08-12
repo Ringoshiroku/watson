@@ -98,6 +98,67 @@ def test_case_round_trips_absent_signature_verification_as_none():
     assert restored.static.signature_verification is None
 
 
+def test_case_round_trips_pe_metadata_versioninfo_fields_through_dict():
+    case = _sample_case()
+    case.static.pe_metadata.company_name = "Watson Test Company"
+    case.static.pe_metadata.product_name = "Watson Test Product"
+    case.static.pe_metadata.original_filename = "legit.exe"
+    case.static.pe_metadata.internal_name = "legit"
+    case.static.pe_metadata.file_description = "Watson Test Description"
+    case.static.pe_metadata.requested_execution_level = "requireAdministrator"
+
+    data = case.to_dict()
+    restored = Case.from_dict(data)
+
+    assert restored.static.pe_metadata.company_name == "Watson Test Company"
+    assert restored.static.pe_metadata.product_name == "Watson Test Product"
+    assert restored.static.pe_metadata.original_filename == "legit.exe"
+    assert restored.static.pe_metadata.internal_name == "legit"
+    assert restored.static.pe_metadata.file_description == "Watson Test Description"
+    assert restored.static.pe_metadata.requested_execution_level == "requireAdministrator"
+
+
+def test_case_round_trips_pe_metadata_versioninfo_fields_default_to_none():
+    case = _sample_case()
+
+    data = case.to_dict()
+    restored = Case.from_dict(data)
+
+    assert restored.static.pe_metadata.company_name is None
+    assert restored.static.pe_metadata.requested_execution_level is None
+
+
+def test_case_round_trips_masquerade_check_through_dict():
+    from watson.case import MasqueradeCheck
+
+    case = _sample_case()
+    case.static.masquerade_check = MasqueradeCheck(
+        filename_mismatch=True,
+        claimed_vendor_mismatch=True,
+        claimed_vendor="Microsoft Corporation",
+        requested_execution_level="requireAdministrator",
+    )
+
+    data = case.to_dict()
+    restored = Case.from_dict(data)
+
+    assert restored.static.masquerade_check == MasqueradeCheck(
+        filename_mismatch=True,
+        claimed_vendor_mismatch=True,
+        claimed_vendor="Microsoft Corporation",
+        requested_execution_level="requireAdministrator",
+    )
+
+
+def test_case_round_trips_absent_masquerade_check_as_none():
+    case = _sample_case()
+
+    data = case.to_dict()
+    restored = Case.from_dict(data)
+
+    assert restored.static.masquerade_check is None
+
+
 def test_case_save_writes_json_named_by_timestamp_and_filename(tmp_path):
     from datetime import datetime
 

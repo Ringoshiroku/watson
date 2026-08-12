@@ -37,6 +37,12 @@ class PEMetadata:
     has_digital_signature: bool
     machine_name: str = ""
     likely_packed: bool = False
+    company_name: Optional[str] = None
+    product_name: Optional[str] = None
+    original_filename: Optional[str] = None
+    internal_name: Optional[str] = None
+    file_description: Optional[str] = None
+    requested_execution_level: Optional[str] = None
 
 
 @dataclass
@@ -76,6 +82,14 @@ class SignatureVerification:
 
 
 @dataclass
+class MasqueradeCheck:
+    filename_mismatch: bool = False
+    claimed_vendor_mismatch: bool = False
+    claimed_vendor: Optional[str] = None
+    requested_execution_level: Optional[str] = None
+
+
+@dataclass
 class PyInstallerExtractionResult:
     tool: str
     success: bool
@@ -109,6 +123,7 @@ class StaticSection:
     pyinstaller_extraction: Optional[PyInstallerExtractionResult] = None
     pyarmor_unpacking: Optional[PyArmorUnpackResult] = None
     signature_verification: Optional[SignatureVerification] = None
+    masquerade_check: Optional[MasqueradeCheck] = None
 
 
 @dataclass
@@ -139,6 +154,8 @@ class Case:
         signature_verification = (
             SignatureVerification(**signature_verification_data) if signature_verification_data else None
         )
+        masquerade_check_data = static_data.get("masquerade_check")
+        masquerade_check = MasqueradeCheck(**masquerade_check_data) if masquerade_check_data else None
         static = StaticSection(
             pe_metadata=pe_metadata,
             elf_metadata=elf_metadata,
@@ -154,6 +171,7 @@ class Case:
             pyinstaller_extraction=pyinstaller_extraction,
             pyarmor_unpacking=pyarmor_unpacking,
             signature_verification=signature_verification,
+            masquerade_check=masquerade_check,
         )
         return cls(identity=identity, static=static)
 
