@@ -95,8 +95,9 @@ source .venv/bin/activate  # or .venv\Scripts\activate on Windows
 pip install -e ".[dev]"
 ```
 
-This installs watson itself, the `watson` console script, `pytest`, and
-`yara-python` (needed for YARA scanning).
+This installs watson itself, the `watson` console script, `pytest`,
+`yara-python` (needed for YARA scanning), and `signify` (needed for
+Authenticode signature verification).
 
 capa, FLOSS, and StringSifter's `rank_strings` are separate CLIs, not
 Python dependencies, watson shells out to whichever of them is on `PATH`.
@@ -109,10 +110,11 @@ One-time (or whenever you want) setup:
 watson setup
 ```
 
-Walks through YARA, capa, FLOSS, DIE, and StringSifter, offering to fetch
-or install whatever isn't already available (a `git clone` for rule sets,
-a `pip install` for the capa/FLOSS/StringSifter CLIs, an official
-portable-build download for DIE on Windows), streaming the real
+Walks through YARA, capa, FLOSS, signify, DIE, and StringSifter, offering
+to fetch or install whatever isn't already available (a `git clone` for
+rule sets, a `pip install` for the capa/FLOSS/StringSifter CLIs and the
+`signify` library, an official portable-build download for DIE on
+Windows), streaming the real
 fetch/install output as it happens, into caches under `~/.watson/`. Skip
 anything you don't want; `watson analyze` still works, it just reports
 that capability as unavailable. Non-interactive runs (scripts, CI, piped
