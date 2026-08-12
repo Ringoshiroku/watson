@@ -1,4 +1,4 @@
-from watson.case import Case, ELFMetadata, Identity, PEMetadata, StaticSection
+from watson.case import Case, ELFMetadata, Identity, PEMetadata, SignatureVerification, StaticSection
 from watson.report import build_json_report, build_text_report
 
 
@@ -1174,3 +1174,49 @@ def test_build_text_report_caps_functions_per_go_package_for_readability():
     assert "... +5 more" in report
     # the underlying case data keeps every recovered function name
     assert len(case.static.go_build_info["packages"]["main"]) == 25
+
+
+def test_build_text_report_shows_signature_verification_details():
+    identity = Identity(sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe")
+    pe_metadata = PEMetadata(
+        machine="0x8664",
+        compile_timestamp=None,
+        sections=[],
+        imports={},
+        has_digital_signature=True,
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        signature_verification=SignatureVerification(
+            tool="signify",
+            status="invalid",
+            verification_result="CERTIFICATE_ERROR",
+            signer_subject="CN=Example Signer",
+            signer_issuer="CN=Example Root",
+            valid_from="2026-01-01T00:00:00+00:00",
+            valid_to="2027-01-01T00:00:00+00:00",
+            error="untrusted root",
+        ),
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "Signature Verification: CERTIFICATE_ERROR" in report
+    assert "Signer Subject: CN=Example Signer" in report
+    assert "Signer Issuer: CN=Example Root" in report
+    assert "Signature Valid From: 2026-01-01T00:00:00+00:00" in report
+    assert "Signature Valid To: 2027-01-01T00:00:00+00:00" in report
+
+
+def test_build_text_report_omits_signature_verification_lines_when_absent():
+    identity = Identity(sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe")
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    case = Case(identity=identity, static=StaticSection(pe_metadata=pe_metadata))
+
+    report = build_text_report(case)
+
+    assert "Signature Verification:" not in report
+    assert "Signer Subject:" not in report
