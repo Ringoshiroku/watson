@@ -15,9 +15,13 @@ watson = "watson.cli:main"
 dev = [
     "pytest>=8.0",
     "yara-python>=4.5",
+    "signify>=0.9",
 ]
 yara = [
     "yara-python>=4.5",
+]
+signify = [
+    "signify>=0.9",
 ]
 
 [build-system]

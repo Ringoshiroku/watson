@@ -43,12 +43,18 @@ def _render_die_lines(die_detections: list) -> list:
     return lines
 
 
-def _render_pe_metadata_lines(pe) -> list:
+def _render_pe_metadata_lines(pe, signature_verification=None) -> list:
     lines = ["PE Metadata", "-" * 11]
     machine = f"{pe.machine} ({pe.machine_name})" if pe.machine_name else pe.machine
     lines.append(f"Machine: {machine}")
     lines.append(f"Compile Timestamp: {pe.compile_timestamp or 'N/A'}")
     lines.append(f"Digital Signature Present: {pe.has_digital_signature}")
+    if signature_verification is not None:
+        lines.append(f"Signature Verification: {signature_verification.verification_result}")
+        lines.append(f"Signer Subject: {signature_verification.signer_subject or 'N/A'}")
+        lines.append(f"Signer Issuer: {signature_verification.signer_issuer or 'N/A'}")
+        lines.append(f"Signature Valid From: {signature_verification.valid_from or 'N/A'}")
+        lines.append(f"Signature Valid To: {signature_verification.valid_to or 'N/A'}")
     lines.append(f"Likely Packed: {pe.likely_packed}")
     return lines
 
@@ -362,7 +368,7 @@ def build_text_report(case: Case, verbose: bool = False) -> str:
     pe = case.static.pe_metadata
     elf = case.static.elf_metadata
     if pe is not None:
-        lines.extend(_render_pe_metadata_lines(pe))
+        lines.extend(_render_pe_metadata_lines(pe, case.static.signature_verification))
         lines.append("")
         lines.extend(_render_die_lines(case.static.die_detections))
         lines.append("")

@@ -64,6 +64,18 @@ class UnpackingResult:
 
 
 @dataclass
+class SignatureVerification:
+    tool: str
+    status: str
+    verification_result: str
+    signer_subject: Optional[str] = None
+    signer_issuer: Optional[str] = None
+    valid_from: Optional[str] = None
+    valid_to: Optional[str] = None
+    error: Optional[str] = None
+
+
+@dataclass
 class PyInstallerExtractionResult:
     tool: str
     success: bool
@@ -96,6 +108,7 @@ class StaticSection:
     go_build_info: dict = field(default_factory=dict)
     pyinstaller_extraction: Optional[PyInstallerExtractionResult] = None
     pyarmor_unpacking: Optional[PyArmorUnpackResult] = None
+    signature_verification: Optional[SignatureVerification] = None
 
 
 @dataclass
@@ -122,6 +135,10 @@ class Case:
         )
         pyarmor_unpacking_data = static_data.get("pyarmor_unpacking")
         pyarmor_unpacking = PyArmorUnpackResult(**pyarmor_unpacking_data) if pyarmor_unpacking_data else None
+        signature_verification_data = static_data.get("signature_verification")
+        signature_verification = (
+            SignatureVerification(**signature_verification_data) if signature_verification_data else None
+        )
         static = StaticSection(
             pe_metadata=pe_metadata,
             elf_metadata=elf_metadata,
@@ -136,6 +153,7 @@ class Case:
             go_build_info=static_data.get("go_build_info", {}),
             pyinstaller_extraction=pyinstaller_extraction,
             pyarmor_unpacking=pyarmor_unpacking,
+            signature_verification=signature_verification,
         )
         return cls(identity=identity, static=static)
 

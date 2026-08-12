@@ -138,12 +138,14 @@ def _verdict(yara_matches: list, capabilities: list) -> str:
     return "unclassified"
 
 
-def _risk(verdict: str, likely_packed: bool, die_packer_names: list, is_unsigned: bool = False) -> str:
+def _risk(
+    verdict: str, likely_packed: bool, die_packer_names: list, is_unsigned: bool = False, signature_invalid: bool = False
+) -> str:
     tier = _RISK_BY_VERDICT[verdict]
     bumps = 0
     if likely_packed or die_packer_names:
         bumps += 1
-    if is_unsigned and verdict != "unclassified":
+    if (is_unsigned or signature_invalid) and verdict != "unclassified":
         bumps += 1
     if bumps:
         index = min(_RISK_ORDER.index(tier) + bumps, len(_RISK_ORDER) - 1)
@@ -210,6 +212,8 @@ def _reasoning(
     tools: dict,
     die_packer_names: list,
     is_unsigned: bool = False,
+    signature_invalid: bool = False,
+    signature_verification_result: str = "",
 ) -> list:
     reasoning = []
 
@@ -308,6 +312,11 @@ def _reasoning(
 
     if is_unsigned:
         reasoning.append("risk raised one tier because the sample is unsigned")
+    elif signature_invalid:
+        reasoning.append(
+            "risk raised one tier because the sample's digital signature failed "
+            f"verification ({signature_verification_result})"
+        )
 
     return reasoning
 
@@ -383,10 +392,22 @@ def classify(
     file_format: str = "pe",
     is_unsigned: bool = False,
     die_packer_names: list = None,
+    signature_invalid: bool = False,
+    signature_verification_result: str = "",
 ) -> dict:
     die_packer_names = die_packer_names or []
     verdict = _verdict(yara_matches, capabilities)
-    risk = _risk(verdict, likely_packed, die_packer_names, is_unsigned)
-    reasoning = _reasoning(verdict, yara_matches, capabilities, likely_packed, tools, die_packer_names, is_unsigned)
+    risk = _risk(verdict, likely_packed, die_packer_names, is_unsigned, signature_invalid)
+    reasoning = _reasoning(
+        verdict,
+        yara_matches,
+        capabilities,
+        likely_packed,
+        tools,
+        die_packer_names,
+        is_unsigned,
+        signature_invalid,
+        signature_verification_result,
+    )
     detection = _detection(verdict, yara_matches, capabilities, machine, file_format)
     return {"verdict": verdict, "risk": risk, "reasoning": reasoning, "detection": detection}

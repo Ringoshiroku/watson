@@ -59,6 +59,45 @@ def test_case_round_trips_absent_unpacking_result_as_none():
     assert restored.static.unpacking is None
 
 
+def test_case_round_trips_signature_verification_through_dict():
+    from watson.case import SignatureVerification
+
+    case = _sample_case()
+    case.static.signature_verification = SignatureVerification(
+        tool="signify",
+        status="invalid",
+        verification_result="CERTIFICATE_ERROR",
+        signer_subject="CN=Example Signer",
+        signer_issuer="CN=Example Root",
+        valid_from="2026-01-01T00:00:00+00:00",
+        valid_to="2027-01-01T00:00:00+00:00",
+        error="untrusted root",
+    )
+
+    data = case.to_dict()
+    restored = Case.from_dict(data)
+
+    assert restored.static.signature_verification == SignatureVerification(
+        tool="signify",
+        status="invalid",
+        verification_result="CERTIFICATE_ERROR",
+        signer_subject="CN=Example Signer",
+        signer_issuer="CN=Example Root",
+        valid_from="2026-01-01T00:00:00+00:00",
+        valid_to="2027-01-01T00:00:00+00:00",
+        error="untrusted root",
+    )
+
+
+def test_case_round_trips_absent_signature_verification_as_none():
+    case = _sample_case()
+
+    data = case.to_dict()
+    restored = Case.from_dict(data)
+
+    assert restored.static.signature_verification is None
+
+
 def test_case_save_writes_json_named_by_timestamp_and_filename(tmp_path):
     from datetime import datetime
 

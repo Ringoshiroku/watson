@@ -405,6 +405,72 @@ def test_classify_packed_and_unsigned_reasoning_lines_both_present():
     assert "risk raised one tier because the sample is unsigned" in result["reasoning"]
 
 
+def test_classify_signature_invalid_bumps_risk_tier_up_one_step():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches, capabilities=[], likely_packed=False, tools={}, signature_invalid=True
+    )
+
+    assert result["risk"] == "medium"
+
+
+def test_classify_signature_invalid_and_packed_stack_two_tiers():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches, capabilities=[], likely_packed=True, tools={}, signature_invalid=True
+    )
+
+    assert result["risk"] == "high"
+
+
+def test_classify_signature_invalid_and_unsigned_do_not_double_bump():
+    # Mutually exclusive in practice (verification only runs when a signature is
+    # present), but the classifier must not double-count if both are ever true.
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches,
+        capabilities=[],
+        likely_packed=False,
+        tools={},
+        is_unsigned=True,
+        signature_invalid=True,
+    )
+
+    assert result["risk"] == "medium"
+
+
+def test_classify_signature_invalid_with_no_other_evidence_stays_unclassified_low_risk():
+    tools = {"yara": {"available": True, "reason": None}, "capa": {"available": True, "reason": None}}
+
+    result = classify(
+        yara_matches=[], capabilities=[], likely_packed=False, tools=tools, signature_invalid=True
+    )
+
+    assert result["verdict"] == "unclassified"
+    assert result["risk"] == "low"
+
+
+def test_classify_signature_invalid_bump_adds_reasoning_line():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches,
+        capabilities=[],
+        likely_packed=False,
+        tools={},
+        signature_invalid=True,
+        signature_verification_result="CERTIFICATE_ERROR",
+    )
+
+    assert (
+        "risk raised one tier because the sample's digital signature failed "
+        "verification (CERTIFICATE_ERROR)" in result["reasoning"]
+    )
+
+
 def test_classify_unclassified_reasoning_when_both_tools_ran_and_found_nothing():
     tools = {
         "yara": {"available": True, "reason": None},
