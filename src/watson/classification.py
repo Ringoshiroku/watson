@@ -312,17 +312,17 @@ def _reasoning(
     if likely_packed or die_packer_names:
         reasoning.append(_packed_reasoning_line(likely_packed, die_packer_names))
 
-    if is_unsigned:
+    if claimed_vendor_mismatch:
+        reasoning.append(
+            "risk raised one tier because the sample's VERSIONINFO claims to be "
+            f"published by {claimed_vendor} but that isn't corroborated by its signature"
+        )
+    elif is_unsigned:
         reasoning.append("risk raised one tier because the sample is unsigned")
     elif signature_invalid:
         reasoning.append(
             "risk raised one tier because the sample's digital signature failed "
             f"verification ({signature_verification_result})"
-        )
-    elif claimed_vendor_mismatch:
-        reasoning.append(
-            "risk raised one tier because the sample's VERSIONINFO claims to be "
-            f"published by {claimed_vendor} but that isn't corroborated by its signature"
         )
 
     return reasoning

@@ -551,6 +551,27 @@ def test_classify_claimed_vendor_mismatch_bump_adds_reasoning_line():
     )
 
 
+def test_classify_claimed_vendor_mismatch_reasoning_wins_over_is_unsigned():
+    # the project owner decided claimed_vendor_mismatch is the more specific,
+    # actionable line for an analyst when multiple publisher-identity-distrust
+    # signals are true at once, so it must be the one shown, not the generic
+    # "unsigned" line.
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches,
+        capabilities=[],
+        likely_packed=False,
+        tools={},
+        is_unsigned=True,
+        claimed_vendor_mismatch=True,
+        claimed_vendor="Microsoft Corporation",
+    )
+
+    assert any("claims to be published by Microsoft Corporation" in line for line in result["reasoning"])
+    assert not any("the sample is unsigned" in line for line in result["reasoning"])
+
+
 def test_classify_unclassified_reasoning_when_both_tools_ran_and_found_nothing():
     tools = {
         "yara": {"available": True, "reason": None},
