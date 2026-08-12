@@ -11,10 +11,11 @@ from importlib.metadata import PackageNotFoundError, version as _package_version
 from pathlib import Path
 
 from watson.case import (
-    Case, ELFMetadata, Identity, PEMetadata, PyArmorUnpackResult, PyInstallerExtractionResult,
+    Case, ELFMetadata, Identity, MasqueradeCheck, PEMetadata, PyArmorUnpackResult, PyInstallerExtractionResult,
     SignatureVerification, StaticSection, UnpackingResult,
 )
 from watson.authenticode_scan import AuthenticodeScanError, verify_signature
+from watson.masquerade_scan import check_masquerade
 from watson.capa_scan import CapaScanError, scan_file as capa_scan_file
 from watson.die_scan import DieScanError, identify_packers, scan_file as die_scan_file
 from watson import upx_unpack
@@ -513,6 +514,12 @@ def build_case(
             has_digital_signature=metadata["has_digital_signature"],
             machine_name=metadata["machine_name"],
             likely_packed=metadata["likely_packed"],
+            company_name=metadata["company_name"],
+            product_name=metadata["product_name"],
+            original_filename=metadata["original_filename"],
+            internal_name=metadata["internal_name"],
+            file_description=metadata["file_description"],
+            requested_execution_level=metadata["requested_execution_level"],
         )
         elf_metadata = None
         imphash = metadata["imphash"]
@@ -582,6 +589,23 @@ def build_case(
 
     signature_invalid = signature_verification is not None and signature_verification.status != "valid"
     signature_verification_result = signature_verification.verification_result if signature_verification else ""
+
+    masquerade_check = None
+    if pe_metadata is not None:
+        version_info = {
+            "company_name": metadata["company_name"],
+            "original_filename": metadata["original_filename"],
+            "internal_name": metadata["internal_name"],
+        }
+        masquerade_result = check_masquerade(
+            file_path.name,
+            version_info,
+            signer_subject=signature_verification.signer_subject if signature_verification else None,
+        )
+        masquerade_check = MasqueradeCheck(
+            **masquerade_result,
+            requested_execution_level=metadata["requested_execution_level"],
+        )
 
     yara_matches = []
 
@@ -806,6 +830,8 @@ def build_case(
         die_packer_names=identify_packers(die_detections),
         signature_invalid=signature_invalid,
         signature_verification_result=signature_verification_result,
+        claimed_vendor_mismatch=masquerade_check.claimed_vendor_mismatch if masquerade_check else False,
+        claimed_vendor=(masquerade_check.claimed_vendor or "") if masquerade_check else "",
     )
 
     static = StaticSection(
@@ -823,6 +849,7 @@ def build_case(
         pyinstaller_extraction=pyinstaller_extraction,
         pyarmor_unpacking=pyarmor_unpacking,
         signature_verification=signature_verification,
+        masquerade_check=masquerade_check,
     )
     resolved_capabilities = (attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym)
     flags_suffix = _capability_flags_suffix(

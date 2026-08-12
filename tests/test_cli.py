@@ -1245,6 +1245,62 @@ def test_build_case_records_signature_invalid_true_when_verification_fails(compi
     assert captured_kwargs["signature_verification_result"] == "CERTIFICATE_ERROR"
 
 
+def test_build_case_populates_pe_metadata_versioninfo_fields(masquerading_pe):
+    case, *_ = build_case(
+        masquerading_pe, run_yara=False, run_capa=False, run_floss=False, run_die=False, run_rank=False
+    )
+
+    assert case.static.pe_metadata.company_name == "Watson Test Company"
+    assert case.static.pe_metadata.original_filename == "original-fixture-name.exe"
+    assert case.static.pe_metadata.requested_execution_level == "requireAdministrator"
+
+
+def test_build_case_flags_filename_mismatch_for_masquerading_pe(masquerading_pe):
+    case, *_ = build_case(
+        masquerading_pe, run_yara=False, run_capa=False, run_floss=False, run_die=False, run_rank=False
+    )
+
+    # masquerading_pe's OriginalFilename ("original-fixture-name.exe") never
+    # matches its actual on-disk filename ("masquerading.exe", set by the
+    # conftest.py fixture), so this must always be True here.
+    assert case.static.masquerade_check.filename_mismatch is True
+    assert case.static.masquerade_check.requested_execution_level == "requireAdministrator"
+
+
+def test_build_case_flags_claimed_vendor_mismatch_when_unsigned_and_known_vendor_claimed(
+    compiled_pe, monkeypatch
+):
+    monkeypatch.setattr(
+        watson.cli, "extract_pe_metadata",
+        lambda path: {**watson.pe_metadata.extract_pe_metadata(path), "company_name": "Microsoft Corporation"},
+    )
+    captured_kwargs = {}
+    real_classify = watson.cli.classify
+
+    def recording_classify(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return real_classify(*args, **kwargs)
+
+    monkeypatch.setattr("watson.cli.classify", recording_classify)
+
+    case, *_ = build_case(
+        compiled_pe, run_yara=False, run_capa=False, run_floss=False, run_die=False, run_rank=False
+    )
+
+    assert case.static.masquerade_check.claimed_vendor_mismatch is True
+    assert case.static.masquerade_check.claimed_vendor == "Microsoft Corporation"
+    assert captured_kwargs["claimed_vendor_mismatch"] is True
+    assert captured_kwargs["claimed_vendor"] == "Microsoft Corporation"
+
+
+def test_build_case_no_claimed_vendor_mismatch_for_elf(compiled_elf):
+    case, *_ = build_case(
+        compiled_elf, run_yara=False, run_capa=False, run_floss=False, run_die=False, run_rank=False
+    )
+
+    assert case.static.masquerade_check is None
+
+
 def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_rank_once_each(
     compiled_pe, monkeypatch
 ):
