@@ -43,7 +43,7 @@ def _render_die_lines(die_detections: list) -> list:
     return lines
 
 
-def _render_pe_metadata_lines(pe, signature_verification=None) -> list:
+def _render_pe_metadata_lines(pe, signature_verification=None, masquerade_check=None) -> list:
     lines = ["PE Metadata", "-" * 11]
     machine = f"{pe.machine} ({pe.machine_name})" if pe.machine_name else pe.machine
     lines.append(f"Machine: {machine}")
@@ -55,6 +55,20 @@ def _render_pe_metadata_lines(pe, signature_verification=None) -> list:
         lines.append(f"Signer Issuer: {signature_verification.signer_issuer or 'N/A'}")
         lines.append(f"Signature Valid From: {signature_verification.valid_from or 'N/A'}")
         lines.append(f"Signature Valid To: {signature_verification.valid_to or 'N/A'}")
+    if pe.company_name or pe.product_name or pe.original_filename or pe.internal_name or pe.file_description:
+        lines.append(f"Claimed Company Name: {pe.company_name or 'N/A'}")
+        lines.append(f"Claimed Product Name: {pe.product_name or 'N/A'}")
+        lines.append(f"Claimed Original Filename: {pe.original_filename or 'N/A'}")
+        lines.append(f"Claimed Internal Name: {pe.internal_name or 'N/A'}")
+        lines.append(f"Claimed File Description: {pe.file_description or 'N/A'}")
+    if pe.requested_execution_level:
+        lines.append(f"Requested Execution Level: {pe.requested_execution_level}")
+    if masquerade_check is not None and (
+        masquerade_check.filename_mismatch or masquerade_check.claimed_vendor_mismatch
+    ):
+        lines.append(f"Filename Mismatch: {masquerade_check.filename_mismatch}")
+        vendor_suffix = f" (claims {masquerade_check.claimed_vendor})" if masquerade_check.claimed_vendor else ""
+        lines.append(f"Claimed Vendor Mismatch: {masquerade_check.claimed_vendor_mismatch}{vendor_suffix}")
     lines.append(f"Likely Packed: {pe.likely_packed}")
     return lines
 
@@ -368,7 +382,9 @@ def build_text_report(case: Case, verbose: bool = False) -> str:
     pe = case.static.pe_metadata
     elf = case.static.elf_metadata
     if pe is not None:
-        lines.extend(_render_pe_metadata_lines(pe, case.static.signature_verification))
+        lines.extend(
+            _render_pe_metadata_lines(pe, case.static.signature_verification, case.static.masquerade_check)
+        )
         lines.append("")
         lines.extend(_render_die_lines(case.static.die_detections))
         lines.append("")

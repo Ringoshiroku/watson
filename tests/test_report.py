@@ -1,4 +1,4 @@
-from watson.case import Case, ELFMetadata, Identity, PEMetadata, SignatureVerification, StaticSection
+from watson.case import Case, ELFMetadata, Identity, MasqueradeCheck, PEMetadata, SignatureVerification, StaticSection
 from watson.report import build_json_report, build_text_report
 
 
@@ -1220,3 +1220,56 @@ def test_build_text_report_omits_signature_verification_lines_when_absent():
 
     assert "Signature Verification:" not in report
     assert "Signer Subject:" not in report
+
+
+def test_build_text_report_shows_versioninfo_and_masquerade_details():
+    identity = Identity(sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="evil.exe")
+    pe_metadata = PEMetadata(
+        machine="0x8664",
+        compile_timestamp=None,
+        sections=[],
+        imports={},
+        has_digital_signature=False,
+        company_name="Microsoft Corporation",
+        product_name="Windows",
+        original_filename="legit.exe",
+        internal_name="legit",
+        file_description="Totally Legit Tool",
+        requested_execution_level="requireAdministrator",
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        masquerade_check=MasqueradeCheck(
+            filename_mismatch=True,
+            claimed_vendor_mismatch=True,
+            claimed_vendor="Microsoft Corporation",
+            requested_execution_level="requireAdministrator",
+        ),
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case)
+
+    assert "Claimed Company Name: Microsoft Corporation" in report
+    assert "Claimed Product Name: Windows" in report
+    assert "Claimed Original Filename: legit.exe" in report
+    assert "Claimed Internal Name: legit" in report
+    assert "Claimed File Description: Totally Legit Tool" in report
+    assert "Requested Execution Level: requireAdministrator" in report
+    assert "Filename Mismatch: True" in report
+    assert "Claimed Vendor Mismatch: True (claims Microsoft Corporation)" in report
+
+
+def test_build_text_report_omits_masquerade_lines_when_absent():
+    identity = Identity(sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash=None, file_name="sample.exe")
+    pe_metadata = PEMetadata(
+        machine="0x8664", compile_timestamp=None, sections=[], imports={}, has_digital_signature=False
+    )
+    case = Case(identity=identity, static=StaticSection(pe_metadata=pe_metadata))
+
+    report = build_text_report(case)
+
+    assert "Claimed Company Name:" not in report
+    assert "Requested Execution Level:" not in report
+    assert "Filename Mismatch:" not in report
+    assert "Claimed Vendor Mismatch:" not in report
