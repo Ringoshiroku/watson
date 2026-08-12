@@ -2671,8 +2671,9 @@ def test_build_case_stripped_go_build_info_flows_into_classification(compiled_pe
     assert case.static.go_build_info["go_version"] == "go1.24.4"
     assert case.static.go_build_info["module_path"] is None
     assert (
-        "Go binary detected (via pclntab) but no module path or function names were recovered, "
-        "consistent with stripped symbols (e.g. -ldflags=\"-s -w\") or an obfuscator (e.g. Gobfuscator)"
+        "Go binary detected (via pclntab) but no module path or dependency metadata "
+        "was recovered, consistent with build info stripped or removed "
+        "(e.g. by an obfuscator such as Gobfuscator)"
         in case.static.classification["reasoning"]
     )
 

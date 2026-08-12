@@ -210,9 +210,9 @@ def _is_go_build_info_stripped(go_build_info: dict) -> bool:
 
 def _go_build_info_stripped_line() -> str:
     return (
-        "Go binary detected (via pclntab) but no module path or function names "
-        "were recovered, consistent with stripped symbols (e.g. -ldflags=\"-s -w\") "
-        "or an obfuscator (e.g. Gobfuscator)"
+        "Go binary detected (via pclntab) but no module path or dependency "
+        "metadata was recovered, consistent with build info stripped or "
+        "removed (e.g. by an obfuscator such as Gobfuscator)"
     )
 
 

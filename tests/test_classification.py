@@ -381,8 +381,34 @@ def test_classify_stripped_go_build_info_adds_reasoning_line():
     )
 
     assert (
-        "Go binary detected (via pclntab) but no module path or function names were recovered, "
-        "consistent with stripped symbols (e.g. -ldflags=\"-s -w\") or an obfuscator (e.g. Gobfuscator)"
+        "Go binary detected (via pclntab) but no module path or dependency metadata "
+        "was recovered, consistent with build info stripped or removed "
+        "(e.g. by an obfuscator such as Gobfuscator)"
+        in result["reasoning"]
+    )
+
+
+def test_classify_stripped_go_build_info_with_recovered_packages_still_fires():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches,
+        capabilities=[],
+        likely_packed=False,
+        tools={},
+        go_build_info={
+            "go_version": "go1.24.4",
+            "module_path": None,
+            "module_version": None,
+            "dependencies": [],
+            "packages": {"main": ["main.main", "main.beacon"]},
+        },
+    )
+
+    assert (
+        "Go binary detected (via pclntab) but no module path or dependency metadata "
+        "was recovered, consistent with build info stripped or removed "
+        "(e.g. by an obfuscator such as Gobfuscator)"
         in result["reasoning"]
     )
 
@@ -421,7 +447,7 @@ def test_classify_recovered_go_build_info_adds_no_stripped_reasoning_line():
         },
     )
 
-    assert not any("module path or function names" in line for line in result["reasoning"])
+    assert not any("module path or dependency metadata" in line for line in result["reasoning"])
 
 
 def test_classify_no_go_build_info_adds_no_stripped_reasoning_line():
@@ -429,7 +455,7 @@ def test_classify_no_go_build_info_adds_no_stripped_reasoning_line():
 
     result = classify(yara_matches=yara_matches, capabilities=[], likely_packed=False, tools={})
 
-    assert not any("module path or function names" in line for line in result["reasoning"])
+    assert not any("module path or dependency metadata" in line for line in result["reasoning"])
 
 
 def test_classify_unclassified_stripped_go_build_info_adds_reasoning_line():
@@ -443,8 +469,9 @@ def test_classify_unclassified_stripped_go_build_info_adds_reasoning_line():
 
     assert result["verdict"] == "unclassified"
     assert (
-        "Go binary detected (via pclntab) but no module path or function names were recovered, "
-        "consistent with stripped symbols (e.g. -ldflags=\"-s -w\") or an obfuscator (e.g. Gobfuscator)"
+        "Go binary detected (via pclntab) but no module path or dependency metadata "
+        "was recovered, consistent with build info stripped or removed "
+        "(e.g. by an obfuscator such as Gobfuscator)"
         in result["reasoning"]
     )
 
