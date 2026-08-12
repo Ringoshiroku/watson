@@ -363,6 +363,92 @@ def test_classify_entropy_and_die_signal_together_still_bump_only_one_tier():
     )
 
 
+def test_classify_stripped_go_build_info_adds_reasoning_line():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches,
+        capabilities=[],
+        likely_packed=False,
+        tools={},
+        go_build_info={
+            "go_version": "go1.24.4",
+            "module_path": None,
+            "module_version": None,
+            "dependencies": [],
+            "packages": {},
+        },
+    )
+
+    assert (
+        "Go binary detected (via pclntab) but no module path or function names were recovered, "
+        "consistent with stripped symbols (e.g. -ldflags=\"-s -w\") or an obfuscator (e.g. Gobfuscator)"
+        in result["reasoning"]
+    )
+
+
+def test_classify_stripped_go_build_info_does_not_bump_risk():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    without_signal = classify(
+        yara_matches=yara_matches, capabilities=[], likely_packed=False, tools={},
+    )
+    with_signal = classify(
+        yara_matches=yara_matches,
+        capabilities=[],
+        likely_packed=False,
+        tools={},
+        go_build_info={"go_version": "go1.24.4", "module_path": None},
+    )
+
+    assert with_signal["risk"] == without_signal["risk"]
+
+
+def test_classify_recovered_go_build_info_adds_no_stripped_reasoning_line():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches,
+        capabilities=[],
+        likely_packed=False,
+        tools={},
+        go_build_info={
+            "go_version": "go1.24.4",
+            "module_path": "watsontestbin",
+            "module_version": "(devel)",
+            "dependencies": [],
+            "packages": {"main": ["main.main"]},
+        },
+    )
+
+    assert not any("module path or function names" in line for line in result["reasoning"])
+
+
+def test_classify_no_go_build_info_adds_no_stripped_reasoning_line():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(yara_matches=yara_matches, capabilities=[], likely_packed=False, tools={})
+
+    assert not any("module path or function names" in line for line in result["reasoning"])
+
+
+def test_classify_unclassified_stripped_go_build_info_adds_reasoning_line():
+    result = classify(
+        yara_matches=[],
+        capabilities=[],
+        likely_packed=False,
+        tools={},
+        go_build_info={"go_version": "go1.24.4", "module_path": None},
+    )
+
+    assert result["verdict"] == "unclassified"
+    assert (
+        "Go binary detected (via pclntab) but no module path or function names were recovered, "
+        "consistent with stripped symbols (e.g. -ldflags=\"-s -w\") or an obfuscator (e.g. Gobfuscator)"
+        in result["reasoning"]
+    )
+
+
 def test_classify_unsigned_bump_caps_at_high():
     yara_matches = [{"rule": "generic_ransomware_dropper", "tags": [], "matches": []}]
 
