@@ -1012,6 +1012,7 @@ def _run_setup() -> int:
     tools["yara"], _ = _resolve_yara(None, offline=False)
     tools["capa"], _, _ = _resolve_capa(None, None, offline=False)
     tools["floss"] = _resolve_floss(offline=False)
+    tools["signify"] = _resolve_signify(offline=False)
     tools["diec"], _ = _resolve_die(offline=False)
     tools["goresym"], _ = _resolve_goresym(offline=False)
     tools["pyinstxtractor"], _ = _resolve_pyinstxtractor(offline=False)

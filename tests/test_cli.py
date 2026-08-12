@@ -901,6 +901,7 @@ def test_setup_reports_summary_for_all_tools(tmp_path, capsys, monkeypatch):
     assert "yara:" in captured.out
     assert "capa:" in captured.out
     assert "floss:" in captured.out
+    assert "signify:" in captured.out
     assert "diec:" in captured.out
     assert "stringsifter:" in captured.out
     assert "watson analyze" in captured.out
@@ -1202,6 +1203,46 @@ def test_build_case_records_signature_verification_on_success(compiled_pe, monke
     assert case.static.signature_verification.error is None
     assert captured_kwargs["signature_invalid"] is False
     assert captured_kwargs["signature_verification_result"] == "OK"
+
+
+def test_build_case_records_signature_invalid_true_when_verification_fails(compiled_pe, monkeypatch):
+    monkeypatch.setattr("watson.cli.find_module", lambda *a, **k: watson.tool_discovery.ToolStatus(
+        name="signify", available=True, path="signify", reason=None
+    ))
+    monkeypatch.setattr("watson.pe_metadata.extract_pe_metadata", watson.pe_metadata.extract_pe_metadata)
+    monkeypatch.setattr(
+        watson.cli, "extract_pe_metadata",
+        lambda path: {**watson.pe_metadata.extract_pe_metadata(path), "has_digital_signature": True},
+    )
+
+    verify_result = {
+        "status": "invalid",
+        "verification_result": "CERTIFICATE_ERROR",
+        "signer_subject": "CN=Example Signer",
+        "signer_issuer": "CN=Example Root",
+        "valid_from": "2026-01-01T00:00:00+00:00",
+        "valid_to": "2027-01-01T00:00:00+00:00",
+        "error": "untrusted root",
+    }
+    monkeypatch.setattr("watson.cli.verify_signature", lambda *a, **k: verify_result)
+
+    captured_kwargs = {}
+    real_classify = watson.cli.classify
+
+    def recording_classify(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return real_classify(*args, **kwargs)
+
+    monkeypatch.setattr("watson.cli.classify", recording_classify)
+
+    case, *_ = build_case(
+        compiled_pe, run_yara=False, run_capa=False, run_floss=False, run_die=False, run_rank=False
+    )
+
+    assert case.static.signature_verification.status == "invalid"
+    assert case.static.signature_verification.verification_result == "CERTIFICATE_ERROR"
+    assert captured_kwargs["signature_invalid"] is True
+    assert captured_kwargs["signature_verification_result"] == "CERTIFICATE_ERROR"
 
 
 def test_build_case_explicit_run_yara_run_capa_still_prompts_for_floss_die_and_rank_once_each(
