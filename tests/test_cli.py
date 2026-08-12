@@ -2647,6 +2647,36 @@ def test_build_case_runs_goresym_and_populates_go_build_info(compiled_pe, monkey
     assert goresym_raw is not None
 
 
+def test_build_case_stripped_go_build_info_flows_into_classification(compiled_pe, monkeypatch, tmp_path):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "watson.cli._resolve_goresym",
+        lambda offline: ({"available": True, "reason": None}, "GoReSym"),
+    )
+    monkeypatch.setattr(
+        "watson.cli.goresym_scan.scan_file",
+        lambda file_path, goresym_binary=None, timeout=60: {
+            "BuildInfo": {},
+            "UserFunctions": [],
+            "Version": "go1.24.4",
+        },
+    )
+
+    result = build_case(
+        compiled_pe, run_yara=False, run_capa=False, run_floss=False,
+        run_die=False, run_rank=False, run_goresym=True,
+    )
+    case = result[0]
+
+    assert case.static.go_build_info["go_version"] == "go1.24.4"
+    assert case.static.go_build_info["module_path"] is None
+    assert (
+        "Go binary detected (via pclntab) but no module path or function names were recovered, "
+        "consistent with stripped symbols (e.g. -ldflags=\"-s -w\") or an obfuscator (e.g. Gobfuscator)"
+        in case.static.classification["reasoning"]
+    )
+
+
 def test_build_case_reports_goresym_not_requested_by_default(compiled_pe, monkeypatch, tmp_path):
     _isolate_rule_caches(monkeypatch, tmp_path)
 
