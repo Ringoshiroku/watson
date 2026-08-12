@@ -379,7 +379,15 @@ capped at `high`). A signed PE whose signature fails Authenticode
 verification (untrusted chain, tampered digest, malformed signature)
 raises risk the same one tier an unsigned sample does, they represent
 the same thing for risk purposes: the publisher-identity signal for this
-sample can't be trusted. Each applied bump is called out in the reasoning list.
+sample can't be trusted. A PE whose VERSIONINFO claims a well-known
+publisher (e.g. "Microsoft Corporation") without a signature corroborating
+that claim raises risk the same one tier an unsigned or invalidly-signed
+sample does, all three represent the same thing for risk purposes: the
+publisher-identity signal for this sample can't be trusted. A bare
+claimed-filename mismatch or a `requireAdministrator` execution level,
+on their own, don't raise risk, they're surfaced in the report but are
+too weak/common in legitimate software to score on their own. Each
+applied bump is called out in the reasoning list.
 
 The detection name isn't a new algorithm, it's a compact label built
 from the same verdict and evidence already computed: verdict, a `Win32`/
@@ -448,9 +456,9 @@ PIE/stripped flags, packed-likely heuristic), YARA scanning, capa
 capability/ATT&CK/MBC analysis, FLOSS string extraction with IOC-pattern
 flagging, StringSifter relevance ranking of extracted strings, a
 heuristic type/risk classification, Detect It Easy file
-type/compiler/packer detection, and PyInstaller extraction with
+type/compiler/packer detection, PyInstaller extraction with
 PyArmor-protection flagging and automatic pyarmor-1shot unpacking
-(`-p`), all wired through `watson analyze`
+(`-p`), and VERSIONINFO/manifest masquerade detection, all wired through `watson analyze`
 (including batch/directory mode, which now handles a mix of PE and ELF
 files in the same run), with `watson setup` handling interactive
 fetch/install for every optional rule set or tool.
@@ -466,6 +474,14 @@ Known limitations in what's built so far:
   so a `False` reading there is expected, not a gap. Revocation/OCSP
   checking is out of scope, that needs network access and contradicts
   offline-first.
+- VERSIONINFO/manifest masquerade detection (claimed publisher identity vs.
+  the Authenticode signer, claimed original filename vs. the actual
+  filename, and the manifest's requested execution level) uses a short,
+  bundled list of well-known vendor names (Microsoft, Google, Adobe,
+  Mozilla, Apple, Oracle, Intel, NVIDIA, VMware). It is not exhaustive;
+  a masquerade claiming an unlisted vendor won't be flagged, this is a
+  documented known limitation, not an attempt at a complete vendor
+  database.
 - No imphash equivalent for ELF samples (`Identity.imphash` is always
   `None` for them); the community-standard analog, telfhash, isn't
   implemented yet.

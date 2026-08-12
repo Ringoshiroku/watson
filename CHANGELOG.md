@@ -6,6 +6,16 @@ capability, a patch bump is a fix or docs-only change, and a major bump is
 reserved for completing a whole phase (static engine, dynamic engine,
 correlation).
 
+## [Unreleased]
+
+### Added
+- VERSIONINFO/manifest masquerade detection: a PE's claimed publisher
+  (CompanyName), claimed original filename, and manifest
+  requestedExecutionLevel are checked against reality. A claimed
+  well-known vendor uncorroborated by the Authenticode signer bumps risk
+  classification the same one tier an unsigned/invalidly-signed sample
+  does; a bare filename mismatch or execution-level claim is report-only.
+
 ## [0.8.0] - 2026-08-12
 
 ### Added
