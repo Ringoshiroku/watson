@@ -204,6 +204,18 @@ def _packed_reasoning_line(likely_packed: bool, die_packer_names: list) -> str:
     return "risk raised one tier because the sample is likely packed"
 
 
+def _is_go_build_info_stripped(go_build_info: dict) -> bool:
+    return bool(go_build_info.get("go_version")) and not go_build_info.get("module_path")
+
+
+def _go_build_info_stripped_line() -> str:
+    return (
+        "Go binary detected (via pclntab) but no module path or dependency "
+        "metadata was recovered, consistent with build info stripped or "
+        "removed (e.g. by an obfuscator such as Gobfuscator)"
+    )
+
+
 def _reasoning(
     verdict: str,
     yara_matches: list,
@@ -216,14 +228,18 @@ def _reasoning(
     signature_verification_result: str = "",
     claimed_vendor_mismatch: bool = False,
     claimed_vendor: str = "",
+    go_build_info: dict = None,
 ) -> list:
     reasoning = []
+    go_build_info = go_build_info or {}
 
     if verdict == "unclassified":
         reasoning.append(_tool_reasoning_line("yara", tools))
         reasoning.append(_tool_reasoning_line("capa", tools))
         if likely_packed or die_packer_names:
             reasoning.append(_packed_reasoning_line(likely_packed, die_packer_names))
+        if _is_go_build_info_stripped(go_build_info):
+            reasoning.append(_go_build_info_stripped_line())
         return reasoning
 
     if verdict == "trojan":
@@ -311,6 +327,8 @@ def _reasoning(
 
     if likely_packed or die_packer_names:
         reasoning.append(_packed_reasoning_line(likely_packed, die_packer_names))
+    if _is_go_build_info_stripped(go_build_info):
+        reasoning.append(_go_build_info_stripped_line())
 
     if claimed_vendor_mismatch:
         reasoning.append(
@@ -403,6 +421,7 @@ def classify(
     signature_verification_result: str = "",
     claimed_vendor_mismatch: bool = False,
     claimed_vendor: str = "",
+    go_build_info: dict = None,
 ) -> dict:
     die_packer_names = die_packer_names or []
     verdict = _verdict(yara_matches, capabilities)
@@ -419,6 +438,7 @@ def classify(
         signature_verification_result,
         claimed_vendor_mismatch,
         claimed_vendor,
+        go_build_info,
     )
     detection = _detection(verdict, yara_matches, capabilities, machine, file_format)
     return {"verdict": verdict, "risk": risk, "reasoning": reasoning, "detection": detection}

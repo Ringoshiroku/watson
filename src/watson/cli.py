@@ -837,6 +837,7 @@ def build_case(
         signature_verification_result=signature_verification_result,
         claimed_vendor_mismatch=masquerade_check.claimed_vendor_mismatch if masquerade_check else False,
         claimed_vendor=(masquerade_check.claimed_vendor or "") if masquerade_check else "",
+        go_build_info=go_build_info,
     )
 
     static = StaticSection(
