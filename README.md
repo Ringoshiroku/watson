@@ -389,6 +389,12 @@ on their own, don't raise risk, they're surfaced in the report but are
 too weak/common in legitimate software to score on their own. Each
 applied bump is called out in the reasoning list.
 
+A Go binary with build info stripped (no module path or function names
+recoverable, whether from plain `-ldflags="-s -w"` or an obfuscator like
+Gobfuscator) is likewise named in the reasoning list without raising
+risk, plain stripping is too common in legitimate Go software to be
+distinguished from deliberate obfuscation by this signal alone.
+
 The detection name isn't a new algorithm, it's a compact label built
 from the same verdict and evidence already computed: verdict, a `Win32`/
 `Win64` platform tag derived from the PE's machine type, a short token
