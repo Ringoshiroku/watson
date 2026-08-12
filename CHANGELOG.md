@@ -6,6 +6,15 @@ capability, a patch bump is a fix or docs-only change, and a major bump is
 reserved for completing a whole phase (static engine, dynamic engine,
 correlation).
 
+## [0.8.0] - 2026-08-12
+
+### Added
+- Authenticode signature validity verification: a signed PE's signature is
+  checked with `signify` (digest, chain, self-signed/expired), not just
+  detected as present, and an invalid signature bumps the risk
+  classification. Optional; degrades gracefully when `signify` isn't
+  installed, offered by `watson setup`.
+
 ## [0.7.0] - 2026-08-11
 
 ### Added
@@ -17,11 +26,6 @@ correlation).
 - A deterministic Overview section: matched capa capabilities grouped by
   ATT&CK tactic, at the top of the text report and under a new `overview`
   key in the case JSON.
-- Authenticode signature validity verification: a signed PE's signature is
-  checked with `signify` (digest, chain, self-signed/expired), not just
-  detected as present, and an invalid signature bumps the risk
-  classification. Optional; degrades gracefully when `signify` isn't
-  installed, offered by `watson setup`.
 
 ### Fixed
 - `-u`/`--unpack` selected from the interactive "which analyses do you
