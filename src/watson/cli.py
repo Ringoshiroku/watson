@@ -602,6 +602,11 @@ def build_case(
             version_info,
             signer_subject=signature_verification.signer_subject if signature_verification else None,
         )
+        if pe_metadata.has_digital_signature and signature_verification is None:
+            # a signature is present but its identity couldn't be verified (signify
+            # unavailable or a scan error), so there's no basis to call the claimed
+            # vendor uncorroborated, don't flag a mismatch we can't actually support
+            masquerade_result["claimed_vendor_mismatch"] = False
         masquerade_check = MasqueradeCheck(
             **masquerade_result,
             requested_execution_level=metadata["requested_execution_level"],

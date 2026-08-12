@@ -1293,6 +1293,38 @@ def test_build_case_flags_claimed_vendor_mismatch_when_unsigned_and_known_vendor
     assert captured_kwargs["claimed_vendor"] == "Microsoft Corporation"
 
 
+def test_build_case_no_claimed_vendor_mismatch_when_signed_but_signify_unavailable(
+    compiled_pe, monkeypatch
+):
+    # the sample DOES carry a signature, but signify isn't installed so its
+    # identity can't be checked: this must never be reported as a mismatch,
+    # only as "unknown". A false positive here would mean a validly-signed
+    # Microsoft binary gets flagged purely because the verification tool
+    # wasn't available.
+    monkeypatch.setattr(
+        "watson.cli.find_module",
+        lambda *a, **k: watson.tool_discovery.ToolStatus(
+            name="signify", available=False, path=None, reason="signify not installed"
+        ),
+    )
+    monkeypatch.setattr(
+        watson.cli, "extract_pe_metadata",
+        lambda path: {
+            **watson.pe_metadata.extract_pe_metadata(path),
+            "has_digital_signature": True,
+            "company_name": "Microsoft Corporation",
+        },
+    )
+
+    case, *_ = build_case(
+        compiled_pe, run_yara=False, run_capa=False, run_floss=False, run_die=False, run_rank=False
+    )
+
+    assert case.static.signature_verification is None
+    assert case.static.tools["signify"]["available"] is False
+    assert case.static.masquerade_check.claimed_vendor_mismatch is False
+
+
 def test_build_case_no_claimed_vendor_mismatch_for_elf(compiled_elf):
     case, *_ = build_case(
         compiled_elf, run_yara=False, run_capa=False, run_floss=False, run_die=False, run_rank=False
