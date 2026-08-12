@@ -471,6 +471,86 @@ def test_classify_signature_invalid_bump_adds_reasoning_line():
     )
 
 
+def test_classify_claimed_vendor_mismatch_bumps_risk_tier_up_one_step():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches, capabilities=[], likely_packed=False, tools={}, claimed_vendor_mismatch=True
+    )
+
+    assert result["risk"] == "medium"
+
+
+def test_classify_claimed_vendor_mismatch_and_packed_stack_two_tiers():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches, capabilities=[], likely_packed=True, tools={}, claimed_vendor_mismatch=True
+    )
+
+    assert result["risk"] == "high"
+
+
+def test_classify_claimed_vendor_mismatch_and_is_unsigned_do_not_double_bump():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches,
+        capabilities=[],
+        likely_packed=False,
+        tools={},
+        is_unsigned=True,
+        claimed_vendor_mismatch=True,
+    )
+
+    assert result["risk"] == "medium"
+
+
+def test_classify_claimed_vendor_mismatch_and_signature_invalid_do_not_double_bump():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches,
+        capabilities=[],
+        likely_packed=False,
+        tools={},
+        signature_invalid=True,
+        claimed_vendor_mismatch=True,
+    )
+
+    assert result["risk"] == "medium"
+
+
+def test_classify_claimed_vendor_mismatch_with_no_other_evidence_stays_unclassified_low_risk():
+    tools = {"yara": {"available": True, "reason": None}, "capa": {"available": True, "reason": None}}
+
+    result = classify(
+        yara_matches=[], capabilities=[], likely_packed=False, tools=tools, claimed_vendor_mismatch=True
+    )
+
+    assert result["verdict"] == "unclassified"
+    assert result["risk"] == "low"
+
+
+def test_classify_claimed_vendor_mismatch_bump_adds_reasoning_line():
+    yara_matches = [{"rule": "generic_adware_installer", "tags": [], "matches": []}]
+
+    result = classify(
+        yara_matches=yara_matches,
+        capabilities=[],
+        likely_packed=False,
+        tools={},
+        claimed_vendor_mismatch=True,
+        claimed_vendor="Microsoft Corporation",
+    )
+
+    assert (
+        "risk raised one tier because the sample's VERSIONINFO claims to be "
+        "published by Microsoft Corporation but that isn't corroborated by its signature"
+        in result["reasoning"]
+    )
+
+
 def test_classify_unclassified_reasoning_when_both_tools_ran_and_found_nothing():
     tools = {
         "yara": {"available": True, "reason": None},

@@ -139,13 +139,13 @@ def _verdict(yara_matches: list, capabilities: list) -> str:
 
 
 def _risk(
-    verdict: str, likely_packed: bool, die_packer_names: list, is_unsigned: bool = False, signature_invalid: bool = False
+    verdict: str, likely_packed: bool, die_packer_names: list, is_unsigned: bool = False, signature_invalid: bool = False, claimed_vendor_mismatch: bool = False
 ) -> str:
     tier = _RISK_BY_VERDICT[verdict]
     bumps = 0
     if likely_packed or die_packer_names:
         bumps += 1
-    if (is_unsigned or signature_invalid) and verdict != "unclassified":
+    if (is_unsigned or signature_invalid or claimed_vendor_mismatch) and verdict != "unclassified":
         bumps += 1
     if bumps:
         index = min(_RISK_ORDER.index(tier) + bumps, len(_RISK_ORDER) - 1)
@@ -214,6 +214,8 @@ def _reasoning(
     is_unsigned: bool = False,
     signature_invalid: bool = False,
     signature_verification_result: str = "",
+    claimed_vendor_mismatch: bool = False,
+    claimed_vendor: str = "",
 ) -> list:
     reasoning = []
 
@@ -317,6 +319,11 @@ def _reasoning(
             "risk raised one tier because the sample's digital signature failed "
             f"verification ({signature_verification_result})"
         )
+    elif claimed_vendor_mismatch:
+        reasoning.append(
+            "risk raised one tier because the sample's VERSIONINFO claims to be "
+            f"published by {claimed_vendor} but that isn't corroborated by its signature"
+        )
 
     return reasoning
 
@@ -394,10 +401,12 @@ def classify(
     die_packer_names: list = None,
     signature_invalid: bool = False,
     signature_verification_result: str = "",
+    claimed_vendor_mismatch: bool = False,
+    claimed_vendor: str = "",
 ) -> dict:
     die_packer_names = die_packer_names or []
     verdict = _verdict(yara_matches, capabilities)
-    risk = _risk(verdict, likely_packed, die_packer_names, is_unsigned, signature_invalid)
+    risk = _risk(verdict, likely_packed, die_packer_names, is_unsigned, signature_invalid, claimed_vendor_mismatch)
     reasoning = _reasoning(
         verdict,
         yara_matches,
@@ -408,6 +417,8 @@ def classify(
         is_unsigned,
         signature_invalid,
         signature_verification_result,
+        claimed_vendor_mismatch,
+        claimed_vendor,
     )
     detection = _detection(verdict, yara_matches, capabilities, machine, file_format)
     return {"verdict": verdict, "risk": risk, "reasoning": reasoning, "detection": detection}
