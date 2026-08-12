@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -31,6 +32,58 @@ def _is_likely_packed(sections: list) -> bool:
     return any(section["entropy"] >= _PACKED_ENTROPY_THRESHOLD for section in sections)
 
 
+def _extract_version_info(pe: "pefile.PE") -> dict:
+    fields = {
+        "company_name": None,
+        "product_name": None,
+        "original_filename": None,
+        "internal_name": None,
+        "file_description": None,
+    }
+    try:
+        file_info = getattr(pe, "FileInfo", None)
+        if not file_info:
+            return fields
+        for entry in file_info[0]:
+            if entry.name != "StringFileInfo":
+                continue
+            for string_table in entry.StringTable:
+                entries = {
+                    key.decode("utf-8", errors="replace"): value.decode("utf-8", errors="replace")
+                    for key, value in string_table.entries.items()
+                }
+                fields["company_name"] = entries.get("CompanyName") or fields["company_name"]
+                fields["product_name"] = entries.get("ProductName") or fields["product_name"]
+                fields["original_filename"] = entries.get("OriginalFilename") or fields["original_filename"]
+                fields["internal_name"] = entries.get("InternalName") or fields["internal_name"]
+                fields["file_description"] = entries.get("FileDescription") or fields["file_description"]
+    except Exception:
+        return fields
+    return fields
+
+
+def _extract_requested_execution_level(pe: "pefile.PE") -> Optional[str]:
+    try:
+        if not hasattr(pe, "DIRECTORY_ENTRY_RESOURCE"):
+            return None
+        manifest_type_id = pefile.RESOURCE_TYPE.get("RT_MANIFEST")
+        for entry in pe.DIRECTORY_ENTRY_RESOURCE.entries:
+            if entry.name is not None or entry.struct.Id != manifest_type_id:
+                continue
+            leaf = entry.directory.entries[0].directory.entries[0]
+            data = pe.get_memory_mapped_image()[
+                leaf.data.struct.OffsetToData : leaf.data.struct.OffsetToData + leaf.data.struct.Size
+            ]
+            root = ET.fromstring(data.decode("utf-8-sig"))
+            for elem in root.iter():
+                if elem.tag.endswith("requestedExecutionLevel"):
+                    return elem.get("level")
+            return None
+    except Exception:
+        return None
+    return None
+
+
 def extract_pe_metadata(file_path: Path) -> dict:
     try:
         pe = pefile.PE(str(file_path))
@@ -52,6 +105,8 @@ def extract_pe_metadata(file_path: Path) -> dict:
         imports = _extract_imports(pe)
         has_digital_signature = _has_digital_signature(pe)
         imphash = pe.get_imphash() or None
+        version_info = _extract_version_info(pe)
+        requested_execution_level = _extract_requested_execution_level(pe)
 
         return {
             "machine": machine,
@@ -62,6 +117,12 @@ def extract_pe_metadata(file_path: Path) -> dict:
             "has_digital_signature": has_digital_signature,
             "imphash": imphash,
             "likely_packed": _is_likely_packed(sections),
+            "company_name": version_info["company_name"],
+            "product_name": version_info["product_name"],
+            "original_filename": version_info["original_filename"],
+            "internal_name": version_info["internal_name"],
+            "file_description": version_info["file_description"],
+            "requested_execution_level": requested_execution_level,
         }
     finally:
         pe.close()

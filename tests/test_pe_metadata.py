@@ -16,6 +16,23 @@ def test_extract_pe_metadata_reads_real_pe(compiled_pe):
     assert metadata["imphash"] is not None
     # a freshly compiled hello-world binary is not packed
     assert metadata["likely_packed"] is False
+    assert metadata["company_name"] is None
+    assert metadata["product_name"] is None
+    assert metadata["original_filename"] is None
+    assert metadata["internal_name"] is None
+    assert metadata["file_description"] is None
+    assert metadata["requested_execution_level"] is None
+
+
+def test_extract_pe_metadata_reads_versioninfo_and_manifest(masquerading_pe):
+    metadata = extract_pe_metadata(masquerading_pe)
+
+    assert metadata["company_name"] == "Watson Test Company"
+    assert metadata["product_name"] == "Watson Test Fixture Product"
+    assert metadata["original_filename"] == "original-fixture-name.exe"
+    assert metadata["internal_name"] == "fixture-internal-name"
+    assert metadata["file_description"] == "Watson test fixture for VERSIONINFO extraction"
+    assert metadata["requested_execution_level"] == "requireAdministrator"
 
 
 def test_machine_name_maps_known_codes():

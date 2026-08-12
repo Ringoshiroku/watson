@@ -25,6 +25,36 @@ def compiled_pe(tmp_path_factory) -> Path:
     return out_path
 
 
+MINGW_WINDRES = "x86_64-w64-mingw32-windres"
+VERSION_RC_SOURCE = Path(__file__).parent / "fixtures" / "version.rc"
+
+
+@pytest.fixture(scope="session")
+def masquerading_pe(tmp_path_factory) -> Path:
+    if shutil.which(MINGW_COMPILER) is None:
+        pytest.skip(f"{MINGW_COMPILER} not available")
+    if shutil.which(MINGW_WINDRES) is None:
+        pytest.skip(f"{MINGW_WINDRES} not available")
+
+    out_dir = tmp_path_factory.mktemp("masquerading_pe_fixture")
+    resource_obj = out_dir / "version.o"
+    out_path = out_dir / "masquerading.exe"
+
+    subprocess.run(
+        [MINGW_WINDRES, str(VERSION_RC_SOURCE), str(resource_obj)],
+        check=True,
+        capture_output=True,
+        cwd=VERSION_RC_SOURCE.parent,
+    )
+    subprocess.run(
+        [MINGW_COMPILER, str(FIXTURE_SOURCE), str(resource_obj), "-o", str(out_path)],
+        check=True,
+        capture_output=True,
+    )
+
+    return out_path
+
+
 @pytest.fixture(scope="session")
 def compiled_elf(tmp_path_factory) -> Path:
     if shutil.which("gcc") is None:
