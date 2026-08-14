@@ -509,6 +509,7 @@ def build_case(
         pe_metadata = PEMetadata(
             machine=metadata["machine"],
             compile_timestamp=metadata["compile_timestamp"],
+            image_base=metadata["image_base"],
             sections=metadata["sections"],
             imports=metadata["imports"],
             has_digital_signature=metadata["has_digital_signature"],
@@ -536,6 +537,7 @@ def build_case(
             is_pie=metadata["is_pie"],
             is_stripped=metadata["is_stripped"],
             sections=metadata["sections"],
+            segments=metadata["segments"],
             needed_libraries=metadata["needed_libraries"],
             dynamic_symbols=metadata["dynamic_symbols"],
             likely_packed=metadata["likely_packed"],

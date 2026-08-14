@@ -6,6 +6,20 @@ capability, a patch bump is a fix or docs-only change, and a major bump is
 reserved for completing a whole phase (static engine, dynamic engine,
 correlation).
 
+## [Unreleased]
+
+### Added
+- capa evidence addresses and YARA string match offsets in the text report
+  (`-v`/verbose) now resolve to a virtual address ready to paste into
+  Ghidra's "Go To Address" (`VA 0x...`), instead of an unlabeled hex
+  number that was sometimes a file offset and sometimes already a VA with
+  no way to tell which. An address that falls outside any known
+  section/segment (e.g. header bytes, overlay data) is shown as an
+  unmapped file offset instead of a guessed VA. For a PIE ELF sample, the
+  report adds a note that the addresses assume Ghidra imported the file
+  with an image base of 0x0, since Ghidra otherwise applies its own,
+  version-dependent default base for such binaries.
+
 ## [0.10.0] - 2026-08-12
 
 ### Added

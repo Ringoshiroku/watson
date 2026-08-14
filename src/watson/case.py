@@ -36,6 +36,7 @@ class PEMetadata:
     imports: dict
     has_digital_signature: bool
     machine_name: str = ""
+    image_base: int = 0
     likely_packed: bool = False
     company_name: Optional[str] = None
     product_name: Optional[str] = None
@@ -58,6 +59,7 @@ class ELFMetadata:
     dynamic_symbols: list
     likely_packed: bool = False
     has_digital_signature: bool = False
+    segments: list = field(default_factory=list)
 
 
 @dataclass

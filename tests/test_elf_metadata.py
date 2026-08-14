@@ -12,6 +12,8 @@ def test_extract_elf_metadata_reads_real_elf(compiled_elf):
     assert metadata["is_stripped"] is False
     assert len(metadata["sections"]) > 0
     assert any(s["name"] == ".text" for s in metadata["sections"])
+    assert len(metadata["segments"]) > 0
+    assert any(seg["filesz"] > 0 for seg in metadata["segments"])
     assert "libc.so.6" in metadata["needed_libraries"]
     assert "puts" in metadata["dynamic_symbols"]
     assert metadata["likely_packed"] is False

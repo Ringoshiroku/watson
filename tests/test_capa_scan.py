@@ -23,7 +23,7 @@ def test_scan_file_finds_match_in_compiled_pe(compiled_pe):
         {
             "feature": "string",
             "value": "hello from watson test fixture",
-            "addresses": [30208],
+            "addresses": [{"type": "file", "value": 30208}],
             "more_addresses": 0,
         }
     ]
@@ -78,7 +78,12 @@ def test_extract_evidence_keeps_only_successful_leaves():
     evidence = _extract_evidence(matches)
 
     assert evidence == [
-        {"feature": "api", "value": "Sleep", "addresses": [5368713662], "more_addresses": 0}
+        {
+            "feature": "api",
+            "value": "Sleep",
+            "addresses": [{"type": "absolute", "value": 5368713662}],
+            "more_addresses": 0,
+        }
     ]
 
 
@@ -104,7 +109,7 @@ def test_extract_evidence_handles_a_single_feature_leaf_as_the_whole_tree():
         {
             "feature": "string",
             "value": "hello from watson test fixture",
-            "addresses": [30208],
+            "addresses": [{"type": "file", "value": 30208}],
             "more_addresses": 0,
         }
     ]
@@ -126,7 +131,7 @@ def test_extract_evidence_caps_addresses_per_feature_at_five():
 
     evidence = _extract_evidence(matches)
 
-    assert evidence[0]["addresses"] == [0, 1, 2, 3, 4]
+    assert evidence[0]["addresses"] == [{"type": "absolute", "value": i} for i in range(5)]
     assert evidence[0]["more_addresses"] == 2
 
 

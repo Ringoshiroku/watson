@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from typing import Optional
+
+from watson.address_translation import elf_file_offset_to_va, pe_file_offset_to_va
 from watson.case import Case
 
 
@@ -132,14 +135,29 @@ def _format_mapping_entry(entry) -> str:
     return f"{label} [{entry_id}]" if entry_id else label
 
 
-def _format_capa_evidence_line(evidence: dict) -> str:
+def _resolve_va(addr_type: str, value: int, pe, elf) -> Optional[int]:
+    if addr_type == "absolute":
+        return value
+    if pe is not None:
+        return pe_file_offset_to_va(value, pe.image_base, pe.sections)
+    if elf is not None:
+        return elf_file_offset_to_va(value, elf.segments)
+    return None
+
+
+def _format_address(addr_type: str, value: int, pe, elf) -> str:
+    va = _resolve_va(addr_type, value, pe, elf)
+    return f"VA {hex(va)}" if va is not None else f"file offset {hex(value)} (unmapped)"
+
+
+def _format_capa_evidence_line(evidence: dict, pe=None, elf=None) -> str:
     feature = evidence.get("feature") or "feature"
     value = evidence.get("value")
     addresses = evidence.get("addresses") or []
     more = evidence.get("more_addresses", 0)
     if not addresses:
         return f"    {feature}: {value}"
-    addr_text = ", ".join(hex(a) for a in addresses)
+    addr_text = ", ".join(_format_address(addr["type"], addr["value"], pe, elf) for addr in addresses)
     if more:
         addr_text += f" (+{more} more)"
     return f"    {feature}: {value} @ {addr_text}"
@@ -438,6 +456,13 @@ def build_text_report(case: Case, verbose: bool = False) -> str:
         lines.append("")
         lines.extend(_render_pyarmor_unpacking_lines(case.static.pyarmor_unpacking))
 
+    if verbose and elf is not None and elf.is_pie:
+        lines.append("")
+        lines.append(
+            "Note: PIE binary, import into Ghidra with an image base of 0x0 for the "
+            "VA addresses below to match."
+        )
+
     lines.append("")
     lines.append("YARA Matches")
     lines.append("-" * 12)
@@ -454,7 +479,7 @@ def build_text_report(case: Case, verbose: bool = False) -> str:
                         lines.append(f"    {string_match['identifier']}: {string_match['matched_data']}")
                     else:
                         lines.append(
-                            f"    {string_match['identifier']} @ {hex(offset)}: "
+                            f"    {string_match['identifier']} @ {_format_address('file', offset, pe, elf)}: "
                             f"{string_match['matched_data']!r}"
                         )
     else:
@@ -475,7 +500,7 @@ def build_text_report(case: Case, verbose: bool = False) -> str:
                     lines.append(f"    MBC: {_format_mapping_entry(mbc)}")
                 if verbose:
                     for evidence in capability.get("evidence") or []:
-                        lines.append(_format_capa_evidence_line(evidence))
+                        lines.append(_format_capa_evidence_line(evidence, pe, elf))
     else:
         lines.append("  none")
 

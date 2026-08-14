@@ -74,6 +74,10 @@ def test_extract_pe_metadata_reads_real_pe(compiled_pe):
     assert metadata["compile_timestamp"] is not None
     assert len(metadata["sections"]) > 0
     assert any(s["name"].startswith(".text") for s in metadata["sections"])
+    assert metadata["image_base"] > 0
+    text_section = next(s for s in metadata["sections"] if s["name"].startswith(".text"))
+    assert text_section["rva"] > 0
+    assert text_section["raw_offset"] > 0
     assert len(metadata["imports"]) > 0
     assert any(functions for functions in metadata["imports"].values())
     assert "msvcrt.dll" in {dll.lower() for dll in metadata["imports"]}

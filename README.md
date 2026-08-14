@@ -287,11 +287,15 @@ what you want you never have to go through a prompt again:
   ranked strings appear in the report, the complete ranking goes to
   `<out>/<timestamp>-<name>-<md5>-<flags>_ranked_strings.json`. Omit to be asked
   interactively.
-- `-v`, `--verbose`, show full YARA match detail (string identifier, hex
-  offset, matched bytes) and capa match evidence (the specific feature,
-  e.g. an API call, and the address it matched at) in the text report.
-  Omitted by default so the report stays skimmable, this detail is always
-  present in the case JSON regardless of this flag.
+- `-v`, `--verbose`, show full YARA match detail (string identifier,
+  matched bytes) and capa match evidence (the specific feature, e.g. an
+  API call, and the address it matched at) in the text report. Every
+  address is resolved to a virtual address (`VA 0x...`) ready to paste
+  into Ghidra's "Go To Address", or shown as an unmapped file offset when
+  it falls outside any known section/segment. For a PIE ELF sample, a
+  note reminds you to import with an image base of `0x0` in Ghidra so the
+  addresses line up. Omitted by default so the report stays skimmable,
+  this detail is always present in the case JSON regardless of this flag.
 
 Passing any of `-y`/`-c`/`-s`/`-f` skips the analysis-selection prompt
 entirely for the ones you specified and uses (or requires) exactly the

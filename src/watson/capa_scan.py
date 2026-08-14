@@ -39,7 +39,7 @@ def _feature_leaves(node) -> list:
         if ftype is None:
             return []
         addresses = [
-            loc["value"]
+            {"type": loc.get("type"), "value": loc["value"]}
             for loc in node.get("locations") or []
             if isinstance(loc, dict) and "value" in loc
         ]

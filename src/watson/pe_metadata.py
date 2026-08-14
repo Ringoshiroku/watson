@@ -103,6 +103,8 @@ def extract_pe_metadata(file_path: Path) -> dict:
                 "virtual_size": section.Misc_VirtualSize,
                 "raw_size": section.SizeOfRawData,
                 "entropy": round(section.get_entropy(), 4),
+                "rva": section.VirtualAddress,
+                "raw_offset": section.PointerToRawData,
             }
             for section in pe.sections
         ]
@@ -116,6 +118,7 @@ def extract_pe_metadata(file_path: Path) -> dict:
             "machine": machine,
             "machine_name": _machine_name(pe.FILE_HEADER.Machine),
             "compile_timestamp": compile_timestamp,
+            "image_base": pe.OPTIONAL_HEADER.ImageBase,
             "sections": sections,
             "imports": imports,
             "has_digital_signature": has_digital_signature,

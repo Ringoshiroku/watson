@@ -76,6 +76,32 @@ def test_build_json_report_round_trips_elf_case_data():
     assert report["static"]["pe_metadata"] is None
 
 
+def test_build_text_report_includes_pie_import_note_for_pie_elf_when_verbose():
+    case = _sample_elf_case()
+
+    report = build_text_report(case, verbose=True)
+
+    assert "PIE binary" in report
+    assert "image base of 0x0" in report
+
+
+def test_build_text_report_omits_pie_note_when_not_verbose():
+    case = _sample_elf_case()
+
+    report = build_text_report(case)
+
+    assert "PIE binary" not in report
+
+
+def test_build_text_report_omits_pie_note_for_non_pie_elf():
+    case = _sample_elf_case()
+    case.static.elf_metadata.is_pie = False
+
+    report = build_text_report(case, verbose=True)
+
+    assert "PIE binary" not in report
+
+
 def test_build_json_report_round_trips_case_data():
     case = _sample_case()
 
@@ -397,6 +423,57 @@ def test_build_text_report_shows_yara_match_detail_when_verbose():
     assert "evil.example.com" in report
 
 
+def test_build_text_report_resolves_yara_offset_to_va_within_pe_section():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664",
+        compile_timestamp=None,
+        image_base=0x140000000,
+        sections=[
+            {
+                "name": ".text",
+                "virtual_size": 4096,
+                "raw_size": 4096,
+                "entropy": 6.1,
+                "rva": 0x1000,
+                "raw_offset": 0x400,
+            },
+        ],
+        imports={},
+        has_digital_signature=False,
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        yara_matches=[
+            {
+                "rule": "suspicious_string",
+                "tags": [],
+                "matches": [
+                    {"identifier": "$a", "offset": 0x450, "matched_data": "evil.example.com"},
+                ],
+            }
+        ],
+        tools={"yara": {"available": True, "reason": None}},
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case, verbose=True)
+
+    expected_va = 0x140000000 + 0x1000 + 0x50
+    assert f"VA {hex(expected_va)}" in report
+    assert "unmapped" not in report
+
+
+def test_build_text_report_shows_unmapped_file_offset_when_translation_fails():
+    case = _sample_case_with_yara_match_detail()
+
+    report = build_text_report(case, verbose=True)
+
+    assert "file offset 0x1000 (unmapped)" in report
+
+
 def test_build_text_report_hides_yara_match_detail_by_default():
     case = _sample_case_with_yara_match_detail()
 
@@ -637,7 +714,12 @@ def _sample_case_with_capability_evidence() -> Case:
                 "attack": [],
                 "mbc": [],
                 "evidence": [
-                    {"feature": "api", "value": "Sleep", "addresses": [1342177894], "more_addresses": 0},
+                    {
+                        "feature": "api",
+                        "value": "Sleep",
+                        "addresses": [{"type": "absolute", "value": 1342177894}],
+                        "more_addresses": 0,
+                    },
                     {"feature": "api", "value": "WaitForSingleObject", "addresses": [], "more_addresses": 0},
                 ],
             }
@@ -651,7 +733,7 @@ def test_build_text_report_shows_capa_evidence_when_verbose():
 
     report = build_text_report(case, verbose=True)
 
-    assert f"api: Sleep @ {hex(1342177894)}" in report
+    assert f"api: Sleep @ VA {hex(1342177894)}" in report
     assert "api: WaitForSingleObject" in report
 
 
@@ -680,7 +762,15 @@ def test_build_text_report_shows_more_addresses_suffix():
                 "attack": [],
                 "mbc": [],
                 "evidence": [
-                    {"feature": "api", "value": "Sleep", "addresses": [1, 2], "more_addresses": 3},
+                    {
+                        "feature": "api",
+                        "value": "Sleep",
+                        "addresses": [
+                            {"type": "absolute", "value": 1},
+                            {"type": "absolute", "value": 2},
+                        ],
+                        "more_addresses": 3,
+                    },
                 ],
             }
         ],
@@ -690,6 +780,54 @@ def test_build_text_report_shows_more_addresses_suffix():
     report = build_text_report(case, verbose=True)
 
     assert "(+3 more)" in report
+
+
+def test_build_text_report_resolves_capa_file_offset_evidence_to_va_within_pe_section():
+    identity = Identity(
+        sha256="a" * 64, sha1="b" * 40, md5="c" * 32, imphash="d" * 32, file_name="sample.exe"
+    )
+    pe_metadata = PEMetadata(
+        machine="0x8664",
+        compile_timestamp=None,
+        image_base=0x140000000,
+        sections=[
+            {
+                "name": ".text",
+                "virtual_size": 4096,
+                "raw_size": 4096,
+                "entropy": 6.1,
+                "rva": 0x1000,
+                "raw_offset": 0x400,
+            },
+        ],
+        imports={},
+        has_digital_signature=False,
+    )
+    static = StaticSection(
+        pe_metadata=pe_metadata,
+        capabilities=[
+            {
+                "rule": "encrypt data using rc4",
+                "namespace": "data-manipulation/encryption/rc4",
+                "attack": [],
+                "mbc": [],
+                "evidence": [
+                    {
+                        "feature": "string",
+                        "value": "rc4 constant",
+                        "addresses": [{"type": "file", "value": 0x450}],
+                        "more_addresses": 0,
+                    },
+                ],
+            }
+        ],
+    )
+    case = Case(identity=identity, static=static)
+
+    report = build_text_report(case, verbose=True)
+
+    expected_va = 0x140000000 + 0x1000 + 0x50
+    assert f"VA {hex(expected_va)}" in report
 
 
 def test_build_text_report_puts_ungrouped_tactic_bucket_last():

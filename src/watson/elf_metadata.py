@@ -74,6 +74,18 @@ def _extract_sections(elf: ELFFile) -> list:
     return sections
 
 
+def _extract_segments(elf: ELFFile) -> list:
+    return [
+        {
+            "vaddr": segment["p_vaddr"],
+            "offset": segment["p_offset"],
+            "filesz": segment["p_filesz"],
+        }
+        for segment in elf.iter_segments()
+        if segment["p_type"] == "PT_LOAD"
+    ]
+
+
 def _extract_needed_libraries(elf: ELFFile) -> list:
     dynamic = elf.get_section_by_name(".dynamic")
     if dynamic is None:
@@ -102,6 +114,7 @@ def extract_elf_metadata(file_path: Path) -> dict:
             is_stripped = elf.get_section_by_name(".symtab") is None
             interpreter = _extract_interpreter(elf)
             sections = _extract_sections(elf)
+            segments = _extract_segments(elf)
             needed_libraries = _extract_needed_libraries(elf)
             dynamic_symbols = _extract_dynamic_symbols(elf)
     except ELFError as exc:
@@ -115,6 +128,7 @@ def extract_elf_metadata(file_path: Path) -> dict:
         "is_pie": is_pie,
         "is_stripped": is_stripped,
         "sections": sections,
+        "segments": segments,
         "needed_libraries": needed_libraries,
         "dynamic_symbols": dynamic_symbols,
         "likely_packed": _is_likely_packed(sections),
