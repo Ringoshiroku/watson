@@ -6,7 +6,7 @@ capability, a patch bump is a fix or docs-only change, and a major bump is
 reserved for completing a whole phase (static engine, dynamic engine,
 correlation).
 
-## [Unreleased]
+## [0.11.0] - 2026-08-14
 
 ### Added
 - capa evidence addresses and YARA string match offsets in the text report
