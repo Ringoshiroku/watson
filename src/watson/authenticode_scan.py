@@ -31,8 +31,11 @@ def _signer_details(authenticode_file) -> dict:
 
 
 def verify_signature(file_path: Path) -> dict:
-    from signify.authenticode import AuthenticodeFile, AuthenticodeVerificationResult
-    from signify.exceptions import ParseError
+    try:
+        from signify.authenticode import AuthenticodeFile, AuthenticodeVerificationResult
+        from signify.exceptions import ParseError
+    except Exception as import_exc:
+        raise AuthenticodeScanError(f"signify is unusable: {import_exc}") from import_exc
 
     try:
         with open(file_path, "rb") as stream:
