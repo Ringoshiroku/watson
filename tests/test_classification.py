@@ -75,6 +75,15 @@ def test_classify_detects_infostealer_via_yara_keyword():
     assert result["verdict"] == "infostealer"
 
 
+def test_classify_does_not_flag_infostealer_for_stealth_keyword():
+    tools = {"yara": {"available": True, "reason": None}, "capa": {"available": True, "reason": None}}
+    yara_matches = [{"rule": "AntiVM_Stealth_Check", "tags": [], "matches": []}]
+
+    result = classify(yara_matches=yara_matches, capabilities=[], likely_packed=False, tools=tools)
+
+    assert result["verdict"] != "infostealer"
+
+
 def test_classify_detects_backdoor_via_attack_tactic_combination():
     capabilities = [
         {
@@ -224,6 +233,19 @@ def test_classify_priority_order_ransomware_wins_over_worm_when_both_signals_pre
     result = classify(yara_matches=[], capabilities=capabilities, likely_packed=False, tools={})
 
     assert result["verdict"] == "ransomware"
+
+
+def test_classify_packed_with_no_other_evidence_stays_unclassified_low_risk():
+    tools = {
+        "yara": {"available": True, "reason": None},
+        "capa": {"available": True, "reason": None},
+    }
+
+    result = classify(yara_matches=[], capabilities=[], likely_packed=True, tools=tools)
+
+    assert result["verdict"] == "unclassified"
+    assert result["risk"] == "low"
+    assert not any("risk raised" in line for line in result["reasoning"])
 
 
 def test_classify_unclassified_when_no_evidence_at_all():
