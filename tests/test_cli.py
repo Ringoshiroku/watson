@@ -389,7 +389,7 @@ def test_resolve_capability_selection_extracts_run_unpack_from_mega_prompt(monke
     monkeypatch.setattr("builtins.input", lambda prompt="": "u")
 
     result = watson.cli._resolve_capability_selection(
-        rules_dir=None, capa_rules_dir=None, run_floss=None, run_die=None,
+        rules_dir=None, capa_rules_dir=None, capa_sigs_dir=None, run_floss=None, run_die=None,
         run_yara=None, run_capa=None, run_rank=None, run_unpack=None, run_goresym=None,
         run_extract_pyinstaller=None, subject="test.exe",
     )
@@ -418,6 +418,23 @@ def test_analyze_with_explicit_unpack_flag_alone_never_shows_mega_prompt(compile
     monkeypatch.setattr("builtins.input", lambda prompt="": "n")
 
     exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir), "--unpack"])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "which analyses do you want to run?" not in captured.out
+
+
+def test_analyze_with_explicit_capa_sigs_dir_flag_alone_never_shows_mega_prompt(
+    compiled_pe, tmp_path, capsys, monkeypatch
+):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    sigs_dir = tmp_path / "sigs"
+    sigs_dir.mkdir()
+    monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "n")
+
+    exit_code = main(["analyze", str(compiled_pe), "--out", str(out_dir), "--capa-sigs-dir", str(sigs_dir)])
 
     assert exit_code == 0
     captured = capsys.readouterr()
@@ -1402,7 +1419,7 @@ def test_build_case_returns_nine_element_tuple_including_resolved_capabilities(c
 
     assert len(result) == 9
     resolved_capabilities = result[5]
-    assert resolved_capabilities == (True, False, True, False, False, False)
+    assert resolved_capabilities == (True, False, True, False, False, False, False)
 
 
 def test_build_case_does_not_attempt_unpack_when_run_unpack_false(compiled_pe):
@@ -1433,6 +1450,8 @@ def test_build_case_does_not_attempt_unpack_when_die_not_run(compiled_pe, monkey
     )
 
     assert case.static.unpacking is None
+    assert case.static.tools["upx"]["available"] is False
+    assert "--diec" in case.static.tools["upx"]["reason"]
 
 
 def test_build_case_does_not_attempt_unpack_when_die_finds_no_upx(compiled_pe, monkeypatch):
@@ -1805,6 +1824,43 @@ def test_analyze_unpacks_and_saves_a_second_case_for_a_upx_packed_sample(compile
     assert len(unpacked_files) == 1
     captured = capsys.readouterr()
     assert "Unpacked binary analysis" in captured.out
+
+
+def test_analyze_unpacked_reanalysis_keeps_explicit_extract_pyinstaller_flag(compiled_pe, tmp_path, monkeypatch):
+    _isolate_rule_caches(monkeypatch, tmp_path)
+    out_dir = tmp_path / "cases"
+    monkeypatch.setattr("watson.cli._resolve_upx", lambda offline: ({"available": True, "reason": None}, "upx"))
+    monkeypatch.setattr(
+        "watson.cli._resolve_pyinstxtractor", lambda offline: ({"available": True, "reason": None}, "pyinstxtractor-ng")
+    )
+    monkeypatch.setattr("watson.cli._resolve_die", lambda offline: ({"available": True, "reason": None}, "diec"))
+    monkeypatch.setattr(
+        "watson.cli.die_scan_file",
+        lambda *a, **k: [
+            {
+                "filetype": "PE64",
+                "values": [
+                    {"type": "packer", "name": "UPX", "version": None, "string": None},
+                    {"type": "packer", "name": "PyInstaller", "version": None, "string": None},
+                ],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "watson.cli.upx_unpack.unpack_file",
+        lambda file_path, output_path, **k: output_path.write_bytes(file_path.read_bytes()),
+    )
+    monkeypatch.setattr("watson.cli.pyinstaller_extract.extract_file", lambda *a, **k: [])
+
+    exit_code = main(
+        ["analyze", str(compiled_pe), "--out", str(out_dir), "--diec", "--unpack", "--extract-pyinstaller"]
+    )
+
+    assert exit_code == 0
+    case_files = [f for f in out_dir.glob("*.json") if not f.name.endswith(("_floss.json", "_ranked_strings.json"))]
+    unpacked_file = next(f for f in case_files if "_unpacked" in f.name)
+    data = json.loads(unpacked_file.read_text())
+    assert data["static"]["pyinstaller_extraction"] is not None
 
 
 def test_analyze_extracts_and_saves_manifest_when_pyinstaller_detected(compiled_pe, tmp_path, monkeypatch):
@@ -2593,7 +2649,7 @@ def test_resolve_capability_selection_returns_run_goresym_flag_unchanged_when_ex
     monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: False)
 
     result = watson.cli._resolve_capability_selection(
-        rules_dir=None, capa_rules_dir=None, run_floss=False, run_die=False,
+        rules_dir=None, capa_rules_dir=None, capa_sigs_dir=None, run_floss=False, run_die=False,
         run_yara=False, run_capa=False, run_rank=False, run_unpack=False, run_goresym=True,
         run_extract_pyinstaller=False, subject="test.exe",
     )
@@ -2606,7 +2662,7 @@ def test_resolve_capability_selection_returns_run_unpack_flag_unchanged_when_exp
     monkeypatch.setattr("watson.tool_discovery.is_interactive", lambda: False)
 
     result = watson.cli._resolve_capability_selection(
-        rules_dir=None, capa_rules_dir=None, run_floss=False, run_die=False,
+        rules_dir=None, capa_rules_dir=None, capa_sigs_dir=None, run_floss=False, run_die=False,
         run_yara=False, run_capa=False, run_rank=False, run_unpack=True, run_goresym=False,
         run_extract_pyinstaller=False, subject="test.exe",
     )
