@@ -27,6 +27,14 @@ def test_scan_file_raises_floss_scan_error_for_non_pe_file(tmp_path):
         scan_file(bad_file)
 
 
+def test_scan_file_raises_floss_scan_error_for_missing_binary(tmp_path):
+    fake_file = tmp_path / "sample.bin"
+    fake_file.write_bytes(b"not a real PE")
+
+    with pytest.raises(FlossScanError):
+        scan_file(fake_file, floss_binary="definitely-not-a-real-floss-binary-xyz")
+
+
 def test_flatten_strings_tags_each_entry_with_its_source():
     raw = {
         "strings": {

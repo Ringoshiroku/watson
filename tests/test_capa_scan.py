@@ -38,6 +38,16 @@ def test_scan_file_raises_capa_scan_error_for_empty_rules_dir(tmp_path, compiled
         scan_file(compiled_pe, empty_rules_dir)
 
 
+def test_scan_file_raises_capa_scan_error_for_missing_binary(tmp_path):
+    fake_file = tmp_path / "sample.bin"
+    fake_file.write_bytes(b"not a real PE")
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+
+    with pytest.raises(CapaScanError):
+        scan_file(fake_file, rules_dir, capa_binary="definitely-not-a-real-capa-binary-xyz")
+
+
 @requires_capa
 def test_scan_file_raises_capa_scan_error_for_malformed_rule(tmp_path, compiled_pe):
     bad_rules_dir = tmp_path / "bad_rules"

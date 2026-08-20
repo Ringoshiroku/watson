@@ -90,6 +90,8 @@ def scan_file(
             )
         except subprocess.TimeoutExpired as exc:
             raise CapaScanError(f"capa timed out after {timeout}s") from exc
+        except OSError as exc:
+            raise CapaScanError(f"failed to run capa: {exc}") from exc
 
     if result.returncode != 0:
         raise CapaScanError(result.stderr.strip() or f"capa exited with code {result.returncode}")

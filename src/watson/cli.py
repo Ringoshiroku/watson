@@ -408,6 +408,7 @@ def _resolve_python_stdlib() -> dict:
 def _resolve_capability_selection(
     rules_dir: Path | None,
     capa_rules_dir: Path | None,
+    capa_sigs_dir: Path | None,
     run_floss: bool | None,
     run_die: bool | None,
     run_yara: bool | None,
@@ -429,6 +430,7 @@ def _resolve_capability_selection(
     if (
         rules_dir is None
         and capa_rules_dir is None
+        and capa_sigs_dir is None
         and run_floss is None
         and run_die is None
         and run_yara is None
@@ -563,7 +565,7 @@ def build_case(
         attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_unpack, run_goresym, run_extract_pyinstaller,
         forced_verbose,
     ) = _resolve_capability_selection(
-        rules_dir, capa_rules_dir, run_floss, run_die, run_yara, run_capa,
+        rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die, run_yara, run_capa,
         run_rank, run_unpack, run_goresym, run_extract_pyinstaller, file_path.name,
     )
 
@@ -715,17 +717,23 @@ def build_case(
     unpacking = None
 
     if run_unpack:
-        tools["upx"], resolved_upx_path = _resolve_upx(offline=True)
-        if tools["upx"]["available"] and "UPX" in identify_packers(die_detections):
-            tmp_fd, tmp_path_str = tempfile.mkstemp(suffix=file_path.suffix)
-            os.close(tmp_fd)
-            tmp_path = Path(tmp_path_str)
-            try:
-                upx_unpack.unpack_file(file_path, tmp_path, upx_binary=resolved_upx_path)
-                unpacking = UnpackingResult(tool="upx", success=True, output_path=str(tmp_path))
-            except UpxUnpackError as exc:
-                tmp_path.unlink(missing_ok=True)
-                unpacking = UnpackingResult(tool="upx", success=False, reason=str(exc))
+        if not run_die:
+            tools["upx"] = {
+                "available": False,
+                "reason": "unpack not attempted (needs --diec to have run and identify UPX)",
+            }
+        else:
+            tools["upx"], resolved_upx_path = _resolve_upx(offline=True)
+            if tools["upx"]["available"] and "UPX" in identify_packers(die_detections):
+                tmp_fd, tmp_path_str = tempfile.mkstemp(suffix=file_path.suffix)
+                os.close(tmp_fd)
+                tmp_path = Path(tmp_path_str)
+                try:
+                    upx_unpack.unpack_file(file_path, tmp_path, upx_binary=resolved_upx_path)
+                    unpacking = UnpackingResult(tool="upx", success=True, output_path=str(tmp_path))
+                except UpxUnpackError as exc:
+                    tmp_path.unlink(missing_ok=True)
+                    unpacking = UnpackingResult(tool="upx", success=False, reason=str(exc))
     else:
         tools["upx"] = {
             "available": False,
@@ -859,7 +867,9 @@ def build_case(
         signature_verification=signature_verification,
         masquerade_check=masquerade_check,
     )
-    resolved_capabilities = (attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym)
+    resolved_capabilities = (
+        attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_goresym, run_extract_pyinstaller,
+    )
     flags_suffix = _capability_flags_suffix(
         attempt_yara, attempt_capa, run_floss, run_die, run_rank, bool(run_unpack), run_goresym,
         bool(run_extract_pyinstaller),
@@ -1131,7 +1141,7 @@ def _run_analyze(
 
         (
             attempt_yara, attempt_capa, run_floss_resolved, run_die_resolved,
-            run_rank_resolved, run_goresym_resolved,
+            run_rank_resolved, run_goresym_resolved, run_extract_pyinstaller_resolved,
         ) = resolved_capabilities
         try:
             (
@@ -1140,7 +1150,7 @@ def _run_analyze(
             ) = build_case(
                 unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, run_floss_resolved, run_die_resolved,
                 attempt_yara, attempt_capa, run_rank_resolved, run_unpack=False,
-                run_goresym=run_goresym_resolved,
+                run_goresym=run_goresym_resolved, run_extract_pyinstaller=run_extract_pyinstaller_resolved,
             )
         except (InvalidPEError, InvalidELFError, UnsupportedFormatError) as exc:
             case.static.unpacking.reason = f"unpacked but re-analysis failed: {exc}"
@@ -1236,7 +1246,7 @@ def _run_batch(
         attempt_yara, attempt_capa, run_floss, run_die, run_rank, run_unpack, run_goresym, run_extract_pyinstaller,
         forced_verbose,
     ) = _resolve_capability_selection(
-        rules_dir, capa_rules_dir, run_floss, run_die, None, None, run_rank,
+        rules_dir, capa_rules_dir, capa_sigs_dir, run_floss, run_die, None, None, run_rank,
         run_unpack, run_goresym, run_extract_pyinstaller, "this batch",
     )
     effective_verbose = verbose or forced_verbose
@@ -1292,6 +1302,7 @@ def _run_batch(
 
             (
                 r_attempt_yara, r_attempt_capa, r_run_floss, r_run_die, r_run_rank, r_run_goresym,
+                r_run_extract_pyinstaller,
             ) = resolved_capabilities
             try:
                 (
@@ -1300,7 +1311,7 @@ def _run_batch(
                 ) = build_case(
                     unpacked_path, rules_dir, capa_rules_dir, capa_sigs_dir, r_run_floss, r_run_die,
                     r_attempt_yara, r_attempt_capa, r_run_rank, run_unpack=False,
-                    run_goresym=r_run_goresym,
+                    run_goresym=r_run_goresym, run_extract_pyinstaller=r_run_extract_pyinstaller,
                 )
             except (InvalidPEError, InvalidELFError, UnsupportedFormatError) as exc:
                 case.static.unpacking.reason = f"unpacked but re-analysis failed: {exc}"

@@ -5,25 +5,30 @@ from typing import Optional
 
 _RANSOMWARE_KEYWORDS = ("ransom",)
 _WORM_KEYWORDS = ("worm",)
-_INFOSTEALER_KEYWORDS = ("steal", "keylog")
+_INFOSTEALER_KEYWORDS = ("keylog",)
+# "steal" alone false-positives on "stealth" (AntiVM_Stealth, Rootkit_Stealth,
+# ...), a common evasion-related rule/tag word unrelated to infostealing;
+# the negative lookahead excludes that suffix while still matching
+# "stealer"/"infostealer"/"password_stealer".
+_INFOSTEALER_REGEX_KEYWORDS = (r"steal(?!th)",)
 _BACKDOOR_KEYWORDS = ("backdoor",)
 _BACKDOOR_WHOLE_WORD_KEYWORDS = ("rat",)
 _DOWNLOADER_KEYWORDS = ("download", "dropper")
 _ADWARE_KEYWORDS = ("adware", "pua", "unwanted")
 
 _YARA_KEYWORDS_BY_VERDICT = {
-    "ransomware": (_RANSOMWARE_KEYWORDS, ()),
-    "worm": (_WORM_KEYWORDS, ()),
-    "infostealer": (_INFOSTEALER_KEYWORDS, ()),
-    "backdoor": (_BACKDOOR_KEYWORDS, _BACKDOOR_WHOLE_WORD_KEYWORDS),
-    "downloader": (_DOWNLOADER_KEYWORDS, ()),
-    "adware": (_ADWARE_KEYWORDS, ()),
+    "ransomware": (_RANSOMWARE_KEYWORDS, (), ()),
+    "worm": (_WORM_KEYWORDS, (), ()),
+    "infostealer": (_INFOSTEALER_KEYWORDS, (), _INFOSTEALER_REGEX_KEYWORDS),
+    "backdoor": (_BACKDOOR_KEYWORDS, _BACKDOOR_WHOLE_WORD_KEYWORDS, ()),
+    "downloader": (_DOWNLOADER_KEYWORDS, (), ()),
+    "adware": (_ADWARE_KEYWORDS, (), ()),
 }
 
 
 def _yara_hit_for_verdict(verdict: str, yara_matches: list):
-    substrings, whole_words = _YARA_KEYWORDS_BY_VERDICT.get(verdict, ((), ()))
-    return _yara_keyword_hit(yara_matches, substrings=substrings, whole_words=whole_words)
+    substrings, whole_words, regexes = _YARA_KEYWORDS_BY_VERDICT.get(verdict, ((), (), ()))
+    return _yara_keyword_hit(yara_matches, substrings=substrings, whole_words=whole_words, regexes=regexes)
 
 
 _RISK_BY_VERDICT = {
@@ -90,7 +95,7 @@ def _mbc_objectives(capabilities: list) -> dict:
     return objectives
 
 
-def _yara_keyword_hit(yara_matches: list, substrings: tuple = (), whole_words: tuple = ()):
+def _yara_keyword_hit(yara_matches: list, substrings: tuple = (), whole_words: tuple = (), regexes: tuple = ()):
     for match in yara_matches:
         text = f"{match.get('rule', '')} {' '.join(match.get('tags') or [])}".lower()
         for keyword in substrings:
@@ -98,6 +103,9 @@ def _yara_keyword_hit(yara_matches: list, substrings: tuple = (), whole_words: t
                 return match
         for keyword in whole_words:
             if re.search(rf"\b{keyword}\b", text):
+                return match
+        for pattern in regexes:
+            if re.search(pattern, text):
                 return match
     return None
 
@@ -116,7 +124,9 @@ def _verdict(yara_matches: list, capabilities: list) -> str:
     if "Lateral Movement" in tactics or _yara_keyword_hit(yara_matches, substrings=_WORM_KEYWORDS):
         return "worm"
 
-    if "Credential Access" in tactics or _yara_keyword_hit(yara_matches, substrings=_INFOSTEALER_KEYWORDS):
+    if "Credential Access" in tactics or _yara_keyword_hit(
+        yara_matches, substrings=_INFOSTEALER_KEYWORDS, regexes=_INFOSTEALER_REGEX_KEYWORDS
+    ):
         return "infostealer"
 
     if (
@@ -143,7 +153,7 @@ def _risk(
 ) -> str:
     tier = _RISK_BY_VERDICT[verdict]
     bumps = 0
-    if likely_packed or die_packer_names:
+    if (likely_packed or die_packer_names) and verdict != "unclassified":
         bumps += 1
     if (is_unsigned or signature_invalid or claimed_vendor_mismatch) and verdict != "unclassified":
         bumps += 1
@@ -236,8 +246,6 @@ def _reasoning(
     if verdict == "unclassified":
         reasoning.append(_tool_reasoning_line("yara", tools))
         reasoning.append(_tool_reasoning_line("capa", tools))
-        if likely_packed or die_packer_names:
-            reasoning.append(_packed_reasoning_line(likely_packed, die_packer_names))
         if _is_go_build_info_stripped(go_build_info):
             reasoning.append(_go_build_info_stripped_line())
         return reasoning

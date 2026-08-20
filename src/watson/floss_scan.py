@@ -22,6 +22,8 @@ def scan_file(file_path: Path, floss_binary: str = "floss", timeout: int = 120) 
         )
     except subprocess.TimeoutExpired as exc:
         raise FlossScanError(f"floss timed out after {timeout}s") from exc
+    except OSError as exc:
+        raise FlossScanError(f"failed to run floss: {exc}") from exc
 
     if result.returncode != 0:
         raise FlossScanError(result.stderr.strip() or f"floss exited with code {result.returncode}")

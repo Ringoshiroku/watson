@@ -170,9 +170,10 @@ with dots swapped for dashes. `<flags>` is which of
 ### IOC flagging
 
 FLOSS extracts every string in a file. `-f` only promotes IP addresses,
-URLs, registry keys, Windows paths, and emails into the report, the full
-dump goes to the sidecar. Regex-based, not a classifier: expect some false
-positives (e.g. version numbers resembling IPs).
+URLs, registry keys, Windows paths, emails, domain names, and User-Agent
+strings into the report, the full dump goes to the sidecar. Regex-based,
+not a classifier: expect some false positives (e.g. version numbers
+resembling IPs).
 
 ### String ranking
 

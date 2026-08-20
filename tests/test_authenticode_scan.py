@@ -1,7 +1,11 @@
 import datetime
 
 import pytest
-from signify.authenticode import AuthenticodeVerificationResult
+
+try:
+    from signify.authenticode import AuthenticodeVerificationResult
+except Exception as exc:  # pragma: no cover - environment-dependent (e.g. missing libcrypto)
+    pytest.skip(f"signify unusable in this environment: {exc}", allow_module_level=True)
 
 from watson.authenticode_scan import AuthenticodeScanError, verify_signature
 
@@ -11,6 +15,19 @@ def test_verify_signature_raises_for_missing_file(tmp_path):
 
     with pytest.raises(AuthenticodeScanError):
         verify_signature(missing)
+
+
+def test_verify_signature_wraps_signify_import_failure(monkeypatch, tmp_path):
+    import sys
+    import types
+
+    broken_module = types.ModuleType("signify.authenticode")
+    monkeypatch.setitem(sys.modules, "signify.authenticode", broken_module)
+    fake_file = tmp_path / "fake.exe"
+    fake_file.write_bytes(b"irrelevant, the import itself is what fails")
+
+    with pytest.raises(AuthenticodeScanError):
+        verify_signature(fake_file)
 
 
 class _FakeCertificate:
