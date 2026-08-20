@@ -6,6 +6,29 @@ capability, a patch bump is a fix or docs-only change, and a major bump is
 reserved for completing a whole phase (static engine, dynamic engine,
 correlation).
 
+## [0.11.1] - 2026-08-20
+
+### Fixed
+- Authenticode signature verification no longer leaks a raw `signify` import
+  failure (e.g. when its `oscrypto` backend can't find libcrypto) past
+  `watson analyze`; it's wrapped as the same `AuthenticodeScanError` every
+  other verification failure already uses.
+- Classification no longer misclassifies a YARA rule/tag containing
+  "stealth" (e.g. `AntiVM_Stealth`) as an infostealer, and no longer bumps
+  risk for an otherwise-unclassified sample just because it's packed with
+  no other evidence, matching how an unsigned-alone sample already behaves.
+- capa and FLOSS scanning no longer leak a raw exception when their binary
+  can't be executed; both now degrade to their typed scan error like every
+  other tool integration.
+- `--extract-pyinstaller` is no longer dropped when re-analyzing a
+  UPX-unpacked binary, `--capa-sigs-dir` alone now correctly skips the
+  interactive analysis prompt, and the UPX tool status now explains itself
+  when unpacking wasn't attempted because `--diec` wasn't given.
+
+### Docs
+- Corrected the IOC flagging section's category list in the README (it was
+  missing domain names and User-Agent strings).
+
 ## [0.11.0] - 2026-08-14
 
 ### Added
